@@ -38,6 +38,14 @@ export async function GET(req: Request) {
   const steps: { path: string; ms: number; status: number }[] = [];
   const out: Record<string, unknown> = { steps };
 
+  // ?address=0x… only checks what Reins learns from that wallet's on-chain history
+  const address = url.searchParams.get("address");
+  if (address) {
+    const r = await fetch(`${origin}/api/statement`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }) });
+    const j = await r.json();
+    return Response.json({ status: r.status, error: j.error, transactions: j.transactions, habits: j.habits?.map((h: Habit) => h.name) });
+  }
+
   try {
     // 1. Learn habits from the sample statement
     const csv = await fetch(`${origin}/sample_bank_statement.csv`).then((r) => r.text());

@@ -115,10 +115,18 @@ export default function ReinsApp() {
   async function loadStatement(csv: string) {
     const r = await post<{ habits: Habit[]; transactions: number; from: string; to: string; reviewedBy: "serv" | "rules" }>("/api/statement", { csv });
     update((p) => ({ ...p, habits: r.habits, statement: r, today: addDays(r.to, 1), log: [], spent: {} }));
+    if (ref.current.walletAddress) { try { await readWallet(); } catch { /* keep the demo balance */ } }
   }
   // Learn habits from a wallet's on-chain history, and keep reading its balance
   async function loadWallet(address: string) {
     const r = await post<{ habits: Habit[]; transactions: number; from: string; to: string; reviewedBy: "serv" | "rules" }>("/api/statement", { address });
+    if (!r.habits.length) {
+      // Keep the address so the balance can still be shown once a statement is loaded
+      update((p) => ({ ...p, walletAddress: address }));
+      throw new Error(r.transactions
+        ? `Found ${r.transactions} payment${r.transactions === 1 ? "" : "s"} in this wallet, not enough to spot habits yet. Reins needs a few weeks of regular payments. Try the sample statement, or upload a bank statement.`
+        : "No payments found in this wallet on Kite testnet yet. Try the sample statement, or upload a bank statement.");
+    }
     update((p) => ({ ...p, walletAddress: address, habits: r.habits, statement: r, today: addDays(r.to, 1), log: [], spent: {} }));
     try { await readWallet(); } catch { /* balance can be read later from Connect wallet */ }
   }
@@ -229,10 +237,15 @@ export default function ReinsApp() {
       if (current && l.request.amount <= ref.current.potBalance) await approve(current);
     }
   }
-  async function connectWallet() {
-    update((p) => ({ ...p, walletAddress: addressDraft.trim() }));
+  async function connectWallet(address = addressDraft) {
+    update((p) => ({ ...p, walletAddress: address.trim() }));
     await readWallet();
     setWalletOpen(false);
+  }
+  async function connectBrowserWallet() {
+    const address = await browserWalletAddress();
+    setAddressDraft(address);
+    await connectWallet(address);
   }
   const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -255,6 +268,7 @@ export default function ReinsApp() {
     return (
       <Landing busy={busy} error={error}
         onCsv={(csv) => run("Reading your statement…", () => loadStatement(csv))}
+        onBrowserWallet={() => run("Waiting for MetaMask…", async () => loadWallet(await browserWalletAddress()))}
         onWallet={(address) => run("Reading your wallet's payments…", () => loadWallet(address))} />
     );
   }
@@ -617,15 +631,19 @@ export default function ReinsApp() {
         <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 px-4" onClick={() => setWalletOpen(false)}>
           <div role="dialog" aria-modal="true" aria-label="Connect wallet" className="w-full max-w-md rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold">Connect wallet</h2>
-            <p className="mt-1 text-sm text-stone-500">Paste your wallet address. Reins only reads the balance on Kite testnet. It never asks for your keys and can&apos;t move money from this wallet.</p>
-            <input autoFocus className="mt-4 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm" placeholder="0x…" value={addressDraft} onChange={(e) => setAddressDraft(e.target.value)} />
+            <p className="mt-1 text-sm text-stone-500">Reins only reads your balance on Kite testnet. It never asks for your keys and can&apos;t move money from this wallet.</p>
+            <Button className="mt-4 w-full" disabled={!!busy} onClick={() => run("Waiting for MetaMask…", connectBrowserWallet)}>
+              {busy === "Waiting for MetaMask…" ? "Check MetaMask…" : "Connect with MetaMask"}
+            </Button>
+            <p className="mt-4 text-xs text-stone-500">Or paste an address</p>
+            <input className="mt-1 w-full rounded-lg border border-stone-300 bg-transparent px-3 py-2 text-sm" placeholder="0x…" value={addressDraft} onChange={(e) => setAddressDraft(e.target.value)} aria-label="Wallet address" />
             {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
               {s.walletRead && !s.useDemoBalance && (
                 <Button variant="secondary" onClick={() => { update((p) => ({ ...p, useDemoBalance: true })); setWalletOpen(false); }}>Disconnect</Button>
               )}
               <Button variant="secondary" onClick={() => setWalletOpen(false)}>Cancel</Button>
-              <Button disabled={!!busy || !addressDraft.trim()} onClick={() => run("Reading wallet…", connectWallet)}>{busy === "Reading wallet…" ? "Connecting…" : "Connect"}</Button>
+              <Button variant="secondary" disabled={!!busy || !addressDraft.trim()} onClick={() => run("Reading wallet…", () => connectWallet())}>{busy === "Reading wallet…" ? "Connecting…" : "Connect address"}</Button>
             </div>
           </div>
         </div>
@@ -634,12 +652,31 @@ export default function ReinsApp() {
   );
 }
 
+// Ask the browser wallet (MetaMask etc.) which address to use. Read-only: we only take the address.
+type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; isMetaMask?: boolean; providers?: Eip1193[] };
+async function browserWalletAddress(): Promise<string> {
+  // With several wallet extensions installed, window.ethereum may not be MetaMask: prefer it when it's there
+  const injected = (window as unknown as { ethereum?: Eip1193 }).ethereum;
+  const eth = injected?.providers?.find((x) => x.isMetaMask) ?? injected;
+  if (!eth) throw new Error("No browser wallet found. Install MetaMask, or paste your address instead.");
+  try {
+    const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+    if (!accounts?.[0]) throw new Error("No account was shared.");
+    return accounts[0];
+  } catch (e) {
+    const code = (e as { code?: number }).code;
+    if (code === 4001) throw new Error("You closed MetaMask without connecting.");
+    if (code === -32002) throw new Error("MetaMask is already asking. Open it from your browser toolbar.");
+    throw e instanceof Error ? e : new Error("Couldn't connect to your wallet.");
+  }
+}
+
 // ---------------- Small UI pieces ----------------
 
 type Page = "dashboard" | "approvals" | "activity" | "settings";
 
 
-function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => void; onWallet: (address: string) => void; busy: string | null; error: string | null }) {
+function Landing({ onCsv, onWallet, onBrowserWallet, busy, error }: { onCsv: (csv: string) => void; onWallet: (address: string) => void; onBrowserWallet: () => void; busy: string | null; error: string | null }) {
   const [address, setAddress] = useState("");
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0c0a09] text-white">
@@ -672,23 +709,26 @@ function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => voi
               onSubmit={(e) => { e.preventDefault(); if (address.trim()) onWallet(address.trim()); }}>
               <h2 className="font-semibold">Connect your wallet</h2>
               <p className="mt-1 text-sm text-[#a8a29e]">Reins reads your on-chain payments on Kite. Read-only: it can never move your money.</p>
-              <div className="mt-4 flex gap-2">
+              <button type="button" disabled={!!busy} onClick={onBrowserWallet}
+                className="mt-4 rounded-xl bg-[#fff] px-5 py-2.5 text-sm font-semibold text-[#1c1917] hover:bg-[#e7e5e4] disabled:opacity-50">Connect with MetaMask</button>
+              <div className="mt-3 flex gap-2">
                 <input className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-[#78716c] outline-none focus:border-brand-500"
-                  placeholder="0x… wallet address" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Wallet address" />
-                <button type="submit" disabled={!!busy || !address.trim()} className="rounded-xl bg-[#fff] px-4 text-sm font-semibold text-[#1c1917] hover:bg-[#e7e5e4] disabled:opacity-50">Connect</button>
+                  placeholder="or paste an address" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Wallet address" />
+                <button type="submit" disabled={!!busy || !address.trim()} className="rounded-xl border border-white/20 px-4 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50">Connect</button>
               </div>
             </form>
           </div>
 
           <div className="mt-5 min-h-6 text-sm">
-            {busy ? <p className="text-[#d6d3d1]">{busy}</p>
-              : error ? <p className="max-w-3xl text-red-300">{error}</p>
-              : (
-                <button className="text-brand-500 underline underline-offset-4 hover:text-brand-100" disabled={!!busy}
+            {busy ? <p className="text-[#d6d3d1]">{busy}</p> : (
+              <>
+                {error && <p className="mb-2 max-w-3xl text-red-300">{error}</p>}
+                <button className="text-brand-500 underline underline-offset-4 hover:text-brand-100"
                   onClick={async () => onCsv(await (await fetch("/sample_bank_statement.csv")).text())}>
                   No statement handy? Try the sample statement
                 </button>
-              )}
+              </>
+            )}
           </div>
         </main>
 
