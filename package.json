@@ -10,12 +10,16 @@
   },
   "dependencies": {
     "next": "16.0.3",
+    "openai": "^5.23.2",
+    "papaparse": "^5.5.3",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "viem": "^2.37.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Reins
 
-## Getting Started
+**Spend on autopilot. Keep the reins.**
 
-First, run the development server:
+Reins is an AI agent that learns your spending habits from a bank statement, pays for the ones you switch on within hard limits, and switches into **Safe Mode** by itself when your wallet runs low. Built for the SERV Hackathon (Kite track) with **SERV Reasoning** and **Kite Agent Passport**.
+
+## Run it
 
 ```bash
+npm install
+cp .env.example .env.local   # Windows PowerShell: copy .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 and click **use the sample statement**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Without a `SERV_API_KEY` the app runs in **mock mode** (no credits used). Add your key to `.env.local` and restart to use SERV for real.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## What works today
 
-## Learn More
+- Upload a CSV statement → recurring spending is detected (weekday coffee, Friday nights, monthly bills…)
+- **Habit switchboard**: nothing runs until you switch it on; each habit has a hard per-purchase limit
+- **Control modes**: Ask me every time · Trust ladder (autopilot after 3 approvals in a row) · Full autopilot
+- **Safe Mode**: switches on when the wallet can't cover the next 14 days of bills + your safety floor; pauses lifestyle habits and asks before everything else
+- **On-demand requests**: "Order lunch under $15"
+- **Simulated clock**: fast-forward a day or a week to see habits get paid
+- **Read-only wallet**: reads a Kite testnet balance by address (never holds keys)
+- Payments are **mock** for now (fake transaction hashes)
 
-To learn more about Next.js, take a look at the following resources:
+## How decisions work
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Rules first** (`src/lib/engine.ts`): limits, pot balance, Safe Mode and the user's mode. All money math is plain code, so it is exact.
+2. **SERV second** (`src/app/api/decide/route.ts`): if the rules say "allow", SERV checks whether the purchase looks usual for this person. SERV can turn *allow* into *ask*, never the other way round.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+SERV is also used to review detected habits (names, bill vs lifestyle, "forgotten subscription?") and to understand on-demand requests.
 
-## Deploy on Vercel
+## Project map
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Path | What it does | Owner |
+| --- | --- | --- |
+| `src/lib/statement.ts` | Reads bank statement CSVs | A |
+| `src/lib/habits.ts` | Finds recurring spending | A |
+| `src/lib/engine.ts` | Rules, limits, Safe Mode | A |
+| `src/lib/serv.ts` | SERV Reasoning client | A |
+| `src/app/api/*` | Statement, decide, parse-request, pay, wallet, status | A / B |
+| `src/lib/payments.ts` | Payment provider (mock now, Kite next) | B |
+| `src/lib/wallet.ts` | Read-only Kite testnet wallet | B |
+| `src/components/ReinsApp.tsx` | All screens | B |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Next steps
+
+- [ ] Wire `KitePaymentProvider` to Kite Passport (x402 demo shops via `kite-x402-hono`)
+- [ ] Demo shops: coffee, rides, food
+- [ ] Logo (orange horse with reins) and polish
+- [ ] Deploy to Vercel, record the 90-second demo
+
+## Honest limits
+
+- Spending history comes from an uploaded statement; live bank balances are a future feature.
+- Real-world apps (Uber, food delivery) need to accept agent payments first; the demo uses x402 demo shops.
+- App state is saved in your browser for now (no database yet).
