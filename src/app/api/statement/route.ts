@@ -1,16 +1,35 @@
 import { parseStatementCsv } from "@/lib/statement";
 import { detectHabits, describeCadence } from "@/lib/habits";
 import { servConfigured, servJson } from "@/lib/serv";
-import type { Habit, HabitKind } from "@/lib/types";
+import type { Habit, HabitKind, Transaction } from "@/lib/types";
+import { fetchWalletTransactions } from "@/lib/walletHistory";
 
-// Upload a statement: code finds the recurring spending, SERV reviews it
-// (friendlier names, bill vs lifestyle, "possibly forgotten" notes).
+// Learn habits from a bank statement, a wallet's on-chain history, or both.
+// Code finds the recurring spending, SERV reviews it (friendlier names, bill vs
+// lifestyle, "possibly forgotten" notes).
 export async function POST(req: Request) {
-  const { csv } = (await req.json()) as { csv?: string };
-  if (!csv) return Response.json({ error: "No statement received." }, { status: 400 });
+  const { csv, address } = (await req.json()) as { csv?: string; address?: string };
+  if (!csv && !address) return Response.json({ error: "Upload a statement or connect a wallet first." }, { status: 400 });
 
-  const transactions = parseStatementCsv(csv);
-  if (!transactions.length) return Response.json({ error: "Couldn't read any transactions. Is it a CSV with Date and Description columns?" }, { status: 400 });
+  const transactions: Transaction[] = [];
+  if (csv) {
+    const fromCsv = parseStatementCsv(csv);
+    if (!fromCsv.length) return Response.json({ error: "Couldn't read any transactions. Is it a CSV with Date and Description columns?" }, { status: 400 });
+    transactions.push(...fromCsv);
+  }
+  if (address) {
+    try {
+      transactions.push(...(await fetchWalletTransactions(address)));
+    } catch (e) {
+      return Response.json({ error: e instanceof Error ? e.message : "Couldn't read that wallet." }, { status: 400 });
+    }
+  }
+  transactions.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? ""));
+  if (!transactions.some((t) => t.amount < 0)) {
+    return Response.json({ error: address && !csv
+      ? "This wallet has no outgoing payments yet, so there are no habits to learn. Upload a bank statement too, or try the sample."
+      : "No spending found in this statement." }, { status: 400 });
+  }
 
   let habits = detectHabits(transactions);
   let reviewedBy: "serv" | "rules" = "rules";

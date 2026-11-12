@@ -18,3 +18,16 @@ body {
   color: #1c1917;
   font-family: var(--font-sans);
 }
+
+/* Landing: one horse, slowly swaying, its rein gently flowing */
+@media (prefers-reduced-motion: no-preference) {
+  .horse-sway { animation: horse-sway 9s ease-in-out infinite; transform-origin: 60% 90%; }
+  .rein-flow { stroke-dasharray: 3 2.2; animation: rein-flow 6s linear infinite; }
+}
+@keyframes horse-sway {
+  0%, 100% { transform: rotate(-1.2deg); }
+  50% { transform: translateY(-10px) rotate(1.2deg); }
+}
+@keyframes rein-flow {
+  to { stroke-dashoffset: -26; }
+}

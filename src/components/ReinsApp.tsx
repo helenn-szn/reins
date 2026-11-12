@@ -87,6 +87,12 @@ export default function ReinsApp() {
     const r = await post<{ habits: Habit[]; transactions: number; from: string; to: string; reviewedBy: "serv" | "rules" }>("/api/statement", { csv });
     update((p) => ({ ...p, habits: r.habits, statement: r, today: addDays(r.to, 1), log: [], spent: {} }));
   }
+  // Learn habits from a wallet's on-chain history, and keep reading its balance
+  async function loadWallet(address: string) {
+    const r = await post<{ habits: Habit[]; transactions: number; from: string; to: string; reviewedBy: "serv" | "rules" }>("/api/statement", { address });
+    update((p) => ({ ...p, walletAddress: address, habits: r.habits, statement: r, today: addDays(r.to, 1), log: [], spent: {} }));
+    try { await readWallet(); } catch { /* balance can be read later from Connect wallet */ }
+  }
 
   // ---- Payments and decisions ----
   async function pay(entry: LogEntry) {
@@ -212,17 +218,9 @@ export default function ReinsApp() {
 
   if (!hasData) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-        <header className="mb-6 flex items-center gap-3">
-          <Logo size={40} />
-          <div>
-            <h1 className="text-xl font-semibold leading-tight">Reins</h1>
-            <p className="text-sm text-stone-500">Spend on autopilot. Keep the reins.</p>
-          </div>
-        </header>
-        {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
-        <Upload busy={busy} onCsv={(csv) => run("Reading statement…", () => loadStatement(csv))} />
-      </div>
+      <Landing busy={busy} error={error}
+        onCsv={(csv) => run("Reading your statement…", () => loadStatement(csv))}
+        onWallet={(address) => run("Reading your wallet's payments…", () => loadWallet(address))} />
     );
   }
 
@@ -544,23 +542,85 @@ export default function ReinsApp() {
 type Page = "dashboard" | "approvals" | "activity" | "settings";
 
 
-function Upload({ onCsv, busy }: { onCsv: (csv: string) => void; busy: string | null }) {
+function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => void; onWallet: (address: string) => void; busy: string | null; error: string | null }) {
+  const [address, setAddress] = useState("");
   return (
-    <div className="mx-auto max-w-xl rounded-3xl border border-stone-200 bg-white p-8 text-center shadow-sm">
-      <h2 className="text-2xl font-semibold">Let Reins learn your habits</h2>
-      <p className="mt-2 text-stone-500">Upload a bank statement (CSV). Reins finds your recurring spending, and nothing runs until you switch it on.</p>
-      <div className="mt-6 flex flex-col items-center gap-3">
-        <label className="cursor-pointer rounded-xl bg-brand-500 px-5 py-2.5 font-medium text-white hover:bg-brand-600">
-          Upload statement
-          <input type="file" accept=".csv,text/csv" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) onCsv(await f.text()); }} />
-        </label>
-        <button className="text-sm text-brand-600 underline" disabled={!!busy}
-          onClick={async () => onCsv(await (await fetch("/sample_bank_statement.csv")).text())}>
-          or use the sample statement
-        </button>
-        {busy && <p className="text-sm text-stone-500">{busy}</p>}
+    <div className="relative min-h-screen overflow-hidden bg-stone-950 text-white">
+      <HorseBackdrop />
+
+      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-5 py-6 sm:px-8">
+        <header className="flex items-center gap-3">
+          <Logo size={40} />
+          <span className="text-xl font-semibold">Reins</span>
+        </header>
+
+        <main className="flex w-full min-w-0 flex-1 flex-col justify-center py-12">
+          <h1 className="max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">Spend on autopilot. Keep the reins.</h1>
+          <p className="mt-5 max-w-xl text-lg text-stone-300">
+            Reins learns your regular spending, pays for the habits you switch on within hard limits, and gets careful on its own when money runs low.
+          </p>
+
+          <div className="mt-10 grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+              <h2 className="font-semibold">Upload a bank statement</h2>
+              <p className="mt-1 text-sm text-stone-400">A CSV from your bank. Reins finds what you pay for regularly, and when.</p>
+              <label className="mt-4 inline-block cursor-pointer rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 focus-within:outline-2 focus-within:outline-white">
+                Upload statement
+                <input type="file" accept=".csv,text/csv" className="sr-only" disabled={!!busy}
+                  onChange={async (e) => { const f = e.target.files?.[0]; if (f) onCsv(await f.text()); }} />
+              </label>
+            </div>
+
+            <form className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur"
+              onSubmit={(e) => { e.preventDefault(); if (address.trim()) onWallet(address.trim()); }}>
+              <h2 className="font-semibold">Connect your wallet</h2>
+              <p className="mt-1 text-sm text-stone-400">Reins reads your on-chain payments on Kite. Read-only: it can never move your money.</p>
+              <div className="mt-4 flex gap-2">
+                <input className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-stone-500 outline-none focus:border-brand-500"
+                  placeholder="0x… wallet address" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Wallet address" />
+                <button type="submit" disabled={!!busy || !address.trim()} className="rounded-xl bg-white px-4 text-sm font-semibold text-stone-900 hover:bg-stone-200 disabled:opacity-50">Connect</button>
+              </div>
+            </form>
+          </div>
+
+          <div className="mt-5 min-h-6 text-sm">
+            {busy ? <p className="text-stone-300">{busy}</p>
+              : error ? <p className="max-w-3xl text-red-300">{error}</p>
+              : (
+                <button className="text-brand-500 underline underline-offset-4 hover:text-brand-100" disabled={!!busy}
+                  onClick={async () => onCsv(await (await fetch("/sample_bank_statement.csv")).text())}>
+                  No statement handy? Try the sample statement
+                </button>
+              )}
+          </div>
+        </main>
+
+        <footer className="grid gap-6 border-t border-white/10 pt-6 text-sm text-stone-400 sm:grid-cols-3">
+          <p><span className="block font-medium text-white">Learns your habits</span>What you buy, how often, how much and at what time.</p>
+          <p><span className="block font-medium text-white">Hard limits on Kite</span>Each habit you switch on gets its own spending limit.</p>
+          <p><span className="block font-medium text-white">Safe Mode</span>When money runs low, Reins stops and asks before every payment.</p>
+        </footer>
       </div>
     </div>
+  );
+}
+
+// One large horse drawn in thin orange lines, slowly swaying, with the rein flowing
+function HorseBackdrop() {
+  return (
+    <svg viewBox="0 0 100 100" aria-hidden
+      className="horse-sway pointer-events-none absolute right-[-30%] top-1/2 h-[min(82vh,760px)] w-auto -translate-y-1/2 opacity-25 sm:right-[2%] sm:opacity-70">
+      <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M46 6 C47 10 49 14 53 18 C64 20 76 30 81 46 C85 60 86 80 86 100 L52 100 C53 88 54 76 51 66 C49 61 47 58 45 56 C43 60 40 63 36 65 C32 67 28 70 24 72 C20 74 15 73 13 69 C11 65 12 61 14 58 C20 47 27 36 35 25 C38 20 41 15 43 12 C44 10 45 8 46 6 Z"
+          stroke="#F26B1D" strokeOpacity="0.55" strokeWidth="0.45" />
+        <path d="M51 11 C52 8 53 6 55 4 C56 9 56 13 55 18" stroke="#F26B1D" strokeOpacity="0.35" strokeWidth="0.3" />
+        <path d="M53 17 C59 15 65 17 69 21 C66 22 66 24 69 26 C74 29 77 34 79 39 C76 39 76 41 78 44 C81 49 83 55 84 62" stroke="#F26B1D" strokeOpacity="0.35" strokeWidth="0.3" />
+        <path d="M58 22 C66 27 72 35 75 44 M62 21 C69 25 74 31 77 38 M46 55 C43 49 38 47 34 51" stroke="#F26B1D" strokeOpacity="0.25" strokeWidth="0.25" />
+        <ellipse cx="37.5" cy="30" rx="1.4" ry="0.9" transform="rotate(-35 37.5 30)" fill="#F26B1D" fillOpacity="0.6" stroke="none" />
+        <path d="M19 55 C23 59 27 62 31 64 M31 64 L49 16 M44 14 L52 19" stroke="#F5E6D8" strokeOpacity="0.35" strokeWidth="0.3" />
+        <path className="rein-flow" d="M26 69 C45 88 74 85 120 62" stroke="#F26B1D" strokeOpacity="0.85" strokeWidth="0.6" />
+      </g>
+    </svg>
   );
 }
 
