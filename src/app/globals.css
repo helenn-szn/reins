@@ -1,18 +1,12 @@
 @import "tailwindcss";
 
-/* Reins brand: black, white and orange. Safe Mode keeps its own purple so it never looks like branding. */
+/* Reins brand: orange for the product, deep purple for Safe Mode so it never looks like branding */
 @theme {
-  --color-night: #141414;
-  --color-night-2: #262626;
-  --color-night-3: #3a3a3a;
   --color-brand-50: #fff4ec;
   --color-brand-100: #ffe3cf;
   --color-brand-500: #f26b1d;
   --color-brand-600: #d9560b;
   --color-brand-700: #b44509;
-  --color-accent: #ff8a3d;
-  --color-linen: #faf8f6;
-  --color-ink: #141414;
   --color-safe-50: #f3effe;
   --color-safe-600: #6d3fd8;
   --color-safe-700: #5a2fc0;
@@ -20,17 +14,7 @@
 }
 
 body {
-  background: var(--color-linen);
-  color: var(--color-ink);
+  background: #faf8f6;
+  color: #1c1917;
   font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums;
-}
-
-:focus-visible {
-  outline: 2px solid var(--color-brand-500);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .rein-fill { transition: width 600ms cubic-bezier(.2, .8, .2, 1); }
 }
