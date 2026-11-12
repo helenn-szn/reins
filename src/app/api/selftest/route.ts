@@ -11,6 +11,22 @@ export async function GET(req: Request) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
   const origin = url.origin;
+
+  // ?wallet=0x… : check reading a wallet's on-chain history and balance
+  const wallet = url.searchParams.get("wallet");
+  if (wallet) {
+    const { fetchWalletTransactions } = await import("@/lib/walletHistory");
+    const { readWallet } = await import("@/lib/wallet");
+    const res: Record<string, unknown> = {};
+    try { const txs = await fetchWalletTransactions(wallet); res.transactions = txs.length; res.sample = txs.slice(0, 5); } catch (e) { res.historyError = String(e); }
+    try { res.balance = await readWallet(wallet); } catch (e) { res.balanceError = String(e); }
+    try {
+      const r = await fetch(`${origin}/api/statement`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: wallet }) });
+      const j = await r.json();
+      res.statement = { status: r.status, error: j.error, habits: j.habits?.length, transactions: j.transactions };
+    } catch (e) { res.statementError = String(e); }
+    return Response.json(res);
+  }
   const post = async <T,>(path: string, body: unknown): Promise<T> => {
     const t = Date.now();
     const r = await fetch(`${origin}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
