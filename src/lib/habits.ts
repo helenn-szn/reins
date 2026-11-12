@@ -72,6 +72,7 @@ export function detectHabits(txs: Transaction[]): Habit[] {
       avgAmount: round2(avg),
       maxAmount: round2(max),
       lastSeen: g.items[g.items.length - 1].date,
+      usualTime: typicalTime(g.items),
       enabled: false, // nothing runs until the user switches it on
       capPerPurchase: suggestCap(max),
       approvalsInARow: 0,
@@ -116,14 +117,34 @@ function findCadence(items: Transaction[], weeks: number): Cadence | null {
 
 const round2 = (x: number) => Math.round(x * 100) / 100;
 
+// Median time of day, rounded to 5 minutes. Only when most transactions have a time.
+function typicalTime(items: Transaction[]): string | undefined {
+  const mins = items.filter((t) => t.time).map((t) => Number(t.time!.slice(0, 2)) * 60 + Number(t.time!.slice(3, 5)));
+  if (mins.length < Math.ceil(items.length / 2)) return undefined;
+  const m = Math.round(median(mins) / 5) * 5;
+  return `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+// "08:10" -> "8:10 am"
+export function formatTime(hhmm?: string) {
+  if (!hhmm) return "";
+  const h = Number(hhmm.slice(0, 2)), m = hhmm.slice(3, 5);
+  return `${h % 12 || 12}:${m} ${h < 12 ? "am" : "pm"}`;
+}
+
 // Suggested hard limit: a little above the most it has ever cost, rounded up to a whole dollar
 export const suggestCap = (max: number) => Math.ceil(max * 1.1);
 
-export function describeCadence(c: Cadence) {
+export function describeCadence(c: Cadence, usualTime?: string) {
+  const when = usualTime ? ` at about ${formatTime(usualTime)}` : "";
+  return describeDays(c) + when;
+}
+
+function describeDays(c: Cadence) {
   switch (c.type) {
     case "weekdays": return "most weekdays";
     case "weekly": return `every ${WEEKDAYS[c.weekday]}`;
-    case "monthly": return `monthly, around the ${ordinal(c.dayOfMonth)}`;
+    case "monthly": return `monthly on the ${ordinal(c.dayOfMonth)}`;
     case "frequent": return `about ${c.perWeek} times a week`;
   }
 }

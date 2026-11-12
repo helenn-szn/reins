@@ -16,8 +16,8 @@ export async function POST(req: Request) {
     const habit = state.habits.find((h) => h.id === request.habitId);
     const context = {
       purchase: { merchant: request.merchant, amount: request.amount, date: request.date, note: request.description },
-      matchedHabit: habit ? { name: habit.name, cadence: describeCadence(habit.cadence), usualAmount: habit.avgAmount, maxSeen: habit.maxAmount } : null,
-      otherHabits: state.habits.filter((h) => h.enabled).map((h) => `${h.name}: ~$${h.avgAmount} ${describeCadence(h.cadence)}`),
+      matchedHabit: habit ? { name: habit.name, cadence: describeCadence(habit.cadence, habit.usualTime), usualAmount: habit.avgAmount, maxSeen: habit.maxAmount } : null,
+      otherHabits: state.habits.filter((h) => h.enabled).map((h) => `${h.name}: ~$${h.avgAmount} ${describeCadence(h.cadence, h.usualTime)}`),
       walletBalance: state.walletBalance,
     };
     const v = await servJson<{ usual: boolean; reason: string }>(

@@ -24,6 +24,8 @@ export function parseStatementCsv(csv: string): Transaction[] {
     if (!rawDate || !description) continue;
     const date = toIsoDate(rawDate);
     if (!date) continue;
+    // Time can be its own column ("Time") or part of the date ("2026-08-10 08:12")
+    const time = toTime(pick(row, ["time", "transaction time", "posted time"]) ?? rawDate.trim().slice(10));
 
     let amount: number;
     const amt = pick(row, ["amount", "amount (usd)"]);
@@ -31,9 +33,9 @@ export function parseStatementCsv(csv: string): Transaction[] {
     else amount = money(pick(row, ["credit", "money in", "deposit"])) - money(pick(row, ["debit", "money out", "withdrawal"]));
     if (!amount || Number.isNaN(amount)) continue;
 
-    out.push({ date, description: description.trim(), amount });
+    out.push({ date, time, description: description.trim(), amount });
   }
-  return out.sort((a, b) => a.date.localeCompare(b.date));
+  return out.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "").localeCompare(b.time ?? ""));
 }
 
 function toIsoDate(s: string): string | null {
@@ -43,4 +45,16 @@ function toIsoDate(s: string): string | null {
   if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   const d = new Date(t);
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+// "8:05", "08:05:30", "8:05 PM" -> "08:05" / "20:05"
+function toTime(s?: string): string | undefined {
+  const m = s?.trim().match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
+  if (!m) return undefined;
+  let h = Number(m[1]);
+  const pm = m[3]?.toLowerCase();
+  if (pm === "pm" && h < 12) h += 12;
+  if (pm === "am" && h === 12) h = 0;
+  if (h > 23) return undefined;
+  return `${String(h).padStart(2, "0")}:${m[2]}`;
 }

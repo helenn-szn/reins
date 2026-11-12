@@ -41,7 +41,7 @@ type Review = { habits: { id: string; name: string; kind: HabitKind; note?: stri
 
 async function reviewWithServ(habits: Habit[]): Promise<Habit[]> {
   const list = habits.map((h) => ({
-    id: h.id, name: h.name, merchants: h.merchants, cadence: describeCadence(h.cadence),
+    id: h.id, name: h.name, merchants: h.merchants, cadence: describeCadence(h.cadence, h.usualTime),
     avgAmount: h.avgAmount, count: h.count, lastSeen: h.lastSeen, kind: h.kind,
   }));
   const out = await servJson<Review>(

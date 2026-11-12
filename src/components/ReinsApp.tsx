@@ -214,7 +214,7 @@ export default function ReinsApp() {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
         <header className="mb-6 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500 text-lg font-bold text-white">R</div>
+          <Logo size={40} />
           <div>
             <h1 className="text-xl font-semibold leading-tight">Reins</h1>
             <p className="text-sm text-stone-500">Spend on autopilot. Keep the reins.</p>
@@ -231,7 +231,7 @@ export default function ReinsApp() {
       {/* Sidebar */}
       <aside className="hidden bg-stone-900 text-stone-300 lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col lg:px-4 lg:py-6">
         <div className="flex items-center gap-3 px-2">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand-500 font-bold text-white">R</div>
+          <Logo size={36} />
           <span className="text-lg font-semibold text-white">Reins</span>
         </div>
         <nav className="mt-8 space-y-1">
@@ -263,10 +263,10 @@ export default function ReinsApp() {
         {/* Header: welcome, notifications, connect wallet */}
         <header className="relative mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500 text-lg font-bold text-white lg:hidden">R</div>
+            <span className="lg:hidden"><Logo size={40} /></span>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-              <p className="text-sm text-stone-500">{pretty(s.today)}</p>
+              <p className="text-sm text-stone-500">Spend on autopilot. Keep the reins.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -377,7 +377,7 @@ export default function ReinsApp() {
                     <Toggle on={h.enabled} onClick={() => toggleHabit(h)} label={`Switch ${h.name}`} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">
-                        {h.name} <span className="font-normal text-stone-500">· ~{usd(h.avgAmount)} {describeCadence(h.cadence)}</span>
+                        {h.name} <span className="font-normal text-stone-500">· ~{usd(h.avgAmount)} {describeCadence(h.cadence, h.usualTime)}</span>
                       </p>
                       <p className="text-xs text-stone-500">
                         {h.kind} · seen {h.count}× · {h.merchants.join(", ")}
@@ -625,6 +625,27 @@ function Icon({ name }: { name: IconName }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={d} />
+    </svg>
+  );
+}
+
+// The Reins horse: orange horse with a bridle and rein, on a dark tile
+function Logo({ size = 36 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="Reins logo" className="shrink-0">
+      <defs><clipPath id="reins-logo-clip"><rect width="100" height="100" rx="23" /></clipPath></defs>
+      <rect width="100" height="100" rx="23" fill="#1C1917" />
+      <g clipPath="url(#reins-logo-clip)">
+        <path d="M51 11 C52 8 53 6 55 4 C56 9 56 13 55 18 L52 17 Z" fill="#C9530F" />
+        <path d="M53 17 C59 15 65 17 69 21 C66 22 66 24 69 26 C74 29 77 34 79 39 C76 39 76 41 78 44 C81 49 83 55 84 62 L80 46 C76 32 66 22 53 18 Z" fill="#C9530F" />
+        <path d="M46 6 C47 10 49 14 53 18 C64 20 76 30 81 46 C85 60 86 80 86 100 L52 100 C53 88 54 76 51 66 C49 61 47 58 45 56 C43 60 40 63 36 65 C32 67 28 70 24 72 C20 74 15 73 13 69 C11 65 12 61 14 58 C20 47 27 36 35 25 C38 20 41 15 43 12 C44 10 45 8 46 6 Z" fill="#F26B1D" />
+        <path d="M58 22 C66 27 72 35 75 44 M62 21 C69 25 74 31 77 38" fill="none" stroke="#C9530F" strokeWidth="1.1" strokeLinecap="round" />
+        <path d="M46 55 C43 49 38 47 34 51" fill="none" stroke="#C9530F" strokeWidth="1.3" strokeLinecap="round" />
+        <ellipse cx="37.5" cy="30" rx="2.4" ry="1.5" transform="rotate(-35 37.5 30)" fill="#F5E6D8" />
+        <path d="M19 55 C23 59 27 62 31 64 M31 64 L49 16 M44 14 L52 19" fill="none" stroke="#F5E6D8" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="25" cy="68" r="1.8" fill="none" stroke="#F5E6D8" strokeWidth="1.3" />
+        <path d="M26 69 C45 88 74 85 104 66" fill="none" stroke="#F5E6D8" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
     </svg>
   );
 }

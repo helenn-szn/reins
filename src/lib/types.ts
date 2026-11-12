@@ -2,6 +2,7 @@
 
 export type Transaction = {
   date: string; // YYYY-MM-DD
+  time?: string; // HH:MM (24h), when the statement has it
   description: string;
   amount: number; // negative = money out, positive = money in
 };
@@ -26,6 +27,7 @@ export type Habit = {
   avgAmount: number;
   maxAmount: number;
   lastSeen: string;
+  usualTime?: string; // HH:MM (24h): typical time of day it happens, when the statement has times
   // User-controlled
   enabled: boolean; // switchboard on/off
   capPerPurchase: number; // hard limit per purchase (USD)
