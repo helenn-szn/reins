@@ -19,6 +19,36 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Dark theme: flip the neutral greys and soften the tinted backgrounds.
+   Orange stays orange, Safe Mode stays purple. */
+.dark {
+  color-scheme: dark;
+  --color-stone-50: #0c0a09;
+  --color-stone-100: #1c1917;
+  --color-stone-200: #2e2a27;
+  --color-stone-300: #44403c;
+  --color-stone-400: #78716c;
+  --color-stone-500: #a8a29e;
+  --color-stone-600: #d6d3d1;
+  --color-stone-700: #e7e5e4;
+  --color-stone-800: #f5f5f4;
+  --color-stone-900: #fafaf9;
+}
+.dark body { background: #0f0e0d; color: #f5f5f4; }
+.dark .bg-white { background-color: #1a1817; }
+.dark .bg-brand-50 { background-color: rgb(242 107 29 / 0.14); }
+.dark .border-brand-100 { border-color: rgb(242 107 29 / 0.35); }
+.dark .text-brand-600, .dark .text-brand-700 { color: #fb8c4a; }
+.dark .bg-safe-50 { background-color: rgb(109 63 216 / 0.22); }
+.dark .text-safe-700 { color: #c4b1f7; }
+.dark .bg-red-50 { background-color: rgb(239 68 68 / 0.12); }
+.dark .border-red-200 { border-color: rgb(239 68 68 / 0.35); }
+.dark .text-red-700, .dark .text-red-800, .dark .text-red-600 { color: #fca5a5; }
+.dark .bg-emerald-100 { background-color: rgb(16 185 129 / 0.16); }
+.dark .text-emerald-800 { color: #6ee7b7; }
+.dark .bg-amber-100 { background-color: rgb(245 158 11 / 0.16); }
+.dark .text-amber-800 { color: #fcd34d; }
+
 /* Landing: one horse, slowly swaying, its rein gently flowing */
 @media (prefers-reduced-motion: no-preference) {
   .horse-sway { animation: horse-sway 9s ease-in-out infinite; transform-origin: 60% 90%; }

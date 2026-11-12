@@ -55,6 +55,24 @@ export default function ReinsApp() {
   const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
 
+  // Theme: follow the system by default, or a choice the user made in Settings
+  const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
+  const [systemDark, setSystemDark] = useState(false);
+  useEffect(() => {
+    try { const t = localStorage.getItem("reins-theme"); if (t === "light" || t === "dark") setTheme(t); } catch { /* ignore */ }
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setSystemDark(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  const isDark = theme === "dark" || (theme === "system" && systemDark);
+  useEffect(() => { document.documentElement.classList.toggle("dark", isDark); }, [isDark]);
+  const chooseTheme = (t: "system" | "light" | "dark") => {
+    setTheme(t);
+    try { localStorage.setItem("reins-theme", t); } catch { /* ignore */ }
+  };
+
   // Always work from the latest state, even inside long async loops
   const update = (fn: (prev: AppState) => AppState) => {
     ref.current = fn(ref.current);
@@ -227,7 +245,7 @@ export default function ReinsApp() {
   return (
     <div className="min-h-screen lg:flex">
       {/* Sidebar */}
-      <aside className="hidden bg-stone-900 text-stone-300 lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col lg:px-4 lg:py-6">
+      <aside className="hidden bg-[#1c1917] text-[#d6d3d1] lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col lg:px-4 lg:py-6">
         <div className="flex items-center gap-3 px-2">
           <Logo size={36} />
           <span className="text-lg font-semibold text-white">Reins</span>
@@ -245,10 +263,10 @@ export default function ReinsApp() {
         <div className="mt-auto space-y-3 text-xs">
           <div className={`rounded-xl px-3 py-2.5 ${safe?.active ? "bg-safe-600 text-white" : "bg-white/5"}`}>
             <p className="flex items-center gap-2 font-medium text-white">
-              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-white" : "bg-emerald-400"}`} />
+              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-[#fff]" : "bg-emerald-400"}`} />
               {safe?.active ? "Safe Mode is on" : "All good"}
             </p>
-            <p className={`mt-0.5 ${safe?.active ? "text-white/80" : "text-stone-500"}`}>{MODES.find((m) => m.id === s.mode)?.label}</p>
+            <p className={`mt-0.5 ${safe?.active ? "text-white/80" : "text-[#78716c]"}`}>{MODES.find((m) => m.id === s.mode)?.label}</p>
           </div>
           <div className="flex flex-wrap gap-1.5 px-1">
             <span className="rounded-full bg-white/10 px-2 py-0.5">SERV: {status?.serv.mode === "live" ? "live" : "mock"}</span>
@@ -280,7 +298,7 @@ export default function ReinsApp() {
               </button>
             ) : (
               <button onClick={() => { setAddressDraft(s.walletAddress); setWalletOpen(true); }}
-                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700">Connect wallet</button>
+                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-50 hover:bg-stone-700">Connect wallet</button>
             )}
           </div>
 
@@ -306,7 +324,7 @@ export default function ReinsApp() {
         {/* Phone navigation */}
         <nav className="-mx-1 mb-5 flex gap-1 overflow-x-auto lg:hidden">
           {nav.map((n) => (
-            <button key={n.id} onClick={() => go(n.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${page === n.id ? "bg-stone-900 text-white" : "text-stone-600"}`}>
+            <button key={n.id} onClick={() => go(n.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${page === n.id ? "bg-stone-900 text-stone-50" : "text-stone-600"}`}>
               {n.label}{n.badge ? ` (${n.badge})` : ""}
             </button>
           ))}
@@ -332,9 +350,9 @@ export default function ReinsApp() {
                 </div>
 
                 <form className="mt-6 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (request.trim()) run("Asking Reins…", onDemand); }}>
-                  <input className="min-w-0 flex-1 rounded-xl border-0 bg-white px-4 py-3 text-stone-900 outline-none placeholder:text-stone-400 focus:ring-2 focus:ring-white/60"
+                  <input className="min-w-0 flex-1 rounded-xl border-0 bg-[#fff] px-4 py-3 text-[#1c1917] outline-none placeholder:text-[#a8a29e] focus:ring-2 focus:ring-white/60"
                     value={request} onChange={(e) => setRequest(e.target.value)} placeholder="e.g. Order lunch under $15" aria-label="Ask Reins to pay for something" />
-                  <button type="submit" disabled={!!busy || !request.trim()} className="rounded-xl bg-stone-900 px-5 font-semibold text-white hover:bg-stone-800 disabled:opacity-50">Ask</button>
+                  <button type="submit" disabled={!!busy || !request.trim()} className="rounded-xl bg-[#1c1917] px-5 font-semibold text-white hover:bg-[#292524] disabled:opacity-50">Ask</button>
                 </form>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {["Order lunch under $15", "Get me a ride home", "Buy my usual coffee"].map((t) => (
@@ -455,6 +473,19 @@ export default function ReinsApp() {
 
         {page === "settings" && (
           <div className="grid max-w-3xl gap-4">
+            <Card title="Appearance">
+              <div className="divide-y divide-stone-100">
+                <label className="flex items-center justify-between gap-4 py-2.5">
+                  <span><span className="block text-sm font-medium">Match system theme</span><span className="text-xs text-stone-500">Follow your phone or computer&apos;s light or dark setting.</span></span>
+                  <Toggle on={theme === "system"} label="Match system theme" onClick={() => chooseTheme(theme === "system" ? (systemDark ? "dark" : "light") : "system")} />
+                </label>
+                <label className="flex items-center justify-between gap-4 py-2.5">
+                  <span><span className="block text-sm font-medium">Dark mode</span><span className="text-xs text-stone-500">{theme === "system" ? "Set by your system right now. Switch it to choose yourself." : "Your choice, regardless of system setting."}</span></span>
+                  <Toggle on={isDark} label="Dark mode" onClick={() => chooseTheme(isDark ? "light" : "dark")} />
+                </label>
+              </div>
+            </Card>
+
             <Card title="Control mode">
               <div className="space-y-2">
                 {MODES.map((m) => (
@@ -545,7 +576,7 @@ type Page = "dashboard" | "approvals" | "activity" | "settings";
 function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => void; onWallet: (address: string) => void; busy: string | null; error: string | null }) {
   const [address, setAddress] = useState("");
   return (
-    <div className="relative min-h-screen overflow-hidden bg-stone-950 text-white">
+    <div className="relative min-h-screen overflow-hidden bg-[#0c0a09] text-white">
       <HorseBackdrop />
 
       <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-5 py-6 sm:px-8">
@@ -556,14 +587,14 @@ function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => voi
 
         <main className="flex w-full min-w-0 flex-1 flex-col justify-center py-12">
           <h1 className="max-w-2xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">Spend on autopilot. Keep the reins.</h1>
-          <p className="mt-5 max-w-xl text-lg text-stone-300">
+          <p className="mt-5 max-w-xl text-lg text-[#d6d3d1]">
             Reins learns your regular spending, pays for the habits you switch on within hard limits, and gets careful on its own when money runs low.
           </p>
 
           <div className="mt-10 grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
               <h2 className="font-semibold">Upload a bank statement</h2>
-              <p className="mt-1 text-sm text-stone-400">A CSV from your bank. Reins finds what you pay for regularly, and when.</p>
+              <p className="mt-1 text-sm text-[#a8a29e]">A CSV from your bank. Reins finds what you pay for regularly, and when.</p>
               <label className="mt-4 inline-block cursor-pointer rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 focus-within:outline-2 focus-within:outline-white">
                 Upload statement
                 <input type="file" accept=".csv,text/csv" className="sr-only" disabled={!!busy}
@@ -574,17 +605,17 @@ function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => voi
             <form className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur"
               onSubmit={(e) => { e.preventDefault(); if (address.trim()) onWallet(address.trim()); }}>
               <h2 className="font-semibold">Connect your wallet</h2>
-              <p className="mt-1 text-sm text-stone-400">Reins reads your on-chain payments on Kite. Read-only: it can never move your money.</p>
+              <p className="mt-1 text-sm text-[#a8a29e]">Reins reads your on-chain payments on Kite. Read-only: it can never move your money.</p>
               <div className="mt-4 flex gap-2">
-                <input className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-stone-500 outline-none focus:border-brand-500"
+                <input className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-[#78716c] outline-none focus:border-brand-500"
                   placeholder="0x… wallet address" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Wallet address" />
-                <button type="submit" disabled={!!busy || !address.trim()} className="rounded-xl bg-white px-4 text-sm font-semibold text-stone-900 hover:bg-stone-200 disabled:opacity-50">Connect</button>
+                <button type="submit" disabled={!!busy || !address.trim()} className="rounded-xl bg-[#fff] px-4 text-sm font-semibold text-[#1c1917] hover:bg-[#e7e5e4] disabled:opacity-50">Connect</button>
               </div>
             </form>
           </div>
 
           <div className="mt-5 min-h-6 text-sm">
-            {busy ? <p className="text-stone-300">{busy}</p>
+            {busy ? <p className="text-[#d6d3d1]">{busy}</p>
               : error ? <p className="max-w-3xl text-red-300">{error}</p>
               : (
                 <button className="text-brand-500 underline underline-offset-4 hover:text-brand-100" disabled={!!busy}
@@ -595,7 +626,7 @@ function Landing({ onCsv, onWallet, busy, error }: { onCsv: (csv: string) => voi
           </div>
         </main>
 
-        <footer className="grid gap-6 border-t border-white/10 pt-6 text-sm text-stone-400 sm:grid-cols-3">
+        <footer className="grid gap-6 border-t border-white/10 pt-6 text-sm text-[#a8a29e] sm:grid-cols-3">
           <p><span className="block font-medium text-white">Learns your habits</span>What you buy, how often, how much and at what time.</p>
           <p><span className="block font-medium text-white">Hard limits on Kite</span>Each habit you switch on gets its own spending limit.</p>
           <p><span className="block font-medium text-white">Safe Mode</span>When money runs low, Reins stops and asks before every payment.</p>
@@ -642,11 +673,11 @@ function Button({ variant = "primary", className = "", ...props }: React.ButtonH
 }
 
 function Toggle({ on, onClick, label, light = false }: { on: boolean; onClick: () => void; label: string; light?: boolean }) {
-  const track = light ? (on ? "bg-stone-900" : "bg-white/35") : on ? "bg-brand-500" : "bg-stone-300";
+  const track = light ? (on ? "bg-[#1c1917]" : "bg-white/35") : on ? "bg-brand-500" : "bg-stone-300";
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick}
       className={`relative h-6 w-11 shrink-0 rounded-full transition ${track}`}>
-      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-5" : "left-0.5"}`} />
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#fff] shadow transition-all ${on ? "left-5" : "left-0.5"}`} />
     </button>
   );
 }
