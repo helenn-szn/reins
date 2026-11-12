@@ -18,15 +18,15 @@ function getClient() {
 }
 
 // Ask SERV for a JSON answer. Every SERV request needs a system prompt.
-export async function servJson<T>(system: string, user: string, maxTokens = 400): Promise<T> {
+// Reasoning models spend part of the budget thinking, so the limit is generous.
+export async function servJson<T>(system: string, user: string, maxTokens = 4000): Promise<T> {
   const res = await getClient().chat.completions.create({
     model: MODEL,
     messages: [
       { role: "system", content: `${system}\nReply with JSON only, no other text.` },
       { role: "user", content: user },
     ],
-    max_tokens: maxTokens,
-    temperature: 0,
+    max_completion_tokens: maxTokens,
   });
   const text = res.choices[0]?.message?.content ?? "";
   const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
