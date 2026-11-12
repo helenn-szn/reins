@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Decision, EngineState, Habit, LogEntry, Mode, Payment, PurchaseRequest } from "@/lib/types";
 import { describeCadence, describeLimit } from "@/lib/habits";
 import { isDue, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
@@ -52,7 +52,8 @@ export default function ReinsApp() {
   const ref = useRef<AppState>(INITIAL);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string } | null>(null);
+  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null } | null>(null);
+  const [agentWallet, setAgentWallet] = useState<{ balance: number; symbol: string; gas: number } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
 
   // Theme: follow the system by default, or a choice the user made in Settings
@@ -88,6 +89,16 @@ export default function ReinsApp() {
     fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
 
+  // In live Kite mode, show what's in the Reins agent wallet (the spending pot on-chain)
+  const readAgentWallet = useCallback(async () => {
+    if (status?.payments !== "kite" || !status.agent) return;
+    try {
+      const r = await fetch(`/api/wallet?address=${status.agent}`).then((x) => x.json());
+      if (r.token) setAgentWallet({ balance: r.token.balance, symbol: r.token.symbol, gas: r.native.balance });
+    } catch { /* shown as unknown */ }
+  }, [status]);
+  useEffect(() => { readAgentWallet(); }, [readAgentWallet]);
+
   const walletBalance = (st: AppState) => (st.useDemoBalance || !st.walletRead ? st.demoBalance : st.walletRead.balance);
   const engineState = (st: AppState): EngineState => ({
     today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st),
@@ -115,7 +126,12 @@ export default function ReinsApp() {
   // ---- Payments and decisions ----
   async function pay(entry: LogEntry) {
     try {
-      const payment = await post<Payment>("/api/pay", { merchant: entry.request.merchant, amount: entry.request.amount, date: entry.request.date });
+      const habit = ref.current.habits.find((x) => x.id === entry.request.habitId);
+      const payment = await post<Payment>("/api/pay", {
+        merchant: entry.request.merchant, amount: entry.request.amount, date: entry.request.date,
+        category: habit?.category, memo: entry.request.description || habit?.name,
+      });
+      readAgentWallet();
       update((p) => {
         const h = p.habits.find((x) => x.id === entry.request.habitId);
         const key = h ? `${h.id}:${periodKey(h, entry.request.date)}` : null;
@@ -421,6 +437,13 @@ export default function ReinsApp() {
                 )}
                 <Button className="mt-4 w-full" variant="secondary" onClick={() => topUp(40)}>Move $40 to spending pot</Button>
                 <p className="mt-2 text-xs text-stone-500">{s.walletRead && !s.useDemoBalance ? `Reading ${shortAddr(s.walletAddress)} on Kite testnet.` : "Using the demo balance."}</p>
+                {status?.payments === "kite" && status.agent && (
+                  <p className="mt-1 text-xs text-stone-500">
+                    Payments are live on Kite testnet from the Reins agent wallet{" "}
+                    <a className="underline" href={`https://testnet.kitescan.ai/address/${status.agent}`} target="_blank" rel="noreferrer">{shortAddr(status.agent)}</a>
+                    {agentWallet ? ` (${agentWallet.balance.toFixed(2)} ${agentWallet.symbol} left)` : ""}.
+                  </p>
+                )}
               </Card>
             </div>
 
@@ -502,7 +525,10 @@ export default function ReinsApp() {
                       </div>
                     </div>
                     <p className="text-xs text-stone-500">{l.request.description ? `“${l.request.description}” · ` : ""}{l.decision.reason}</p>
-                    {l.payment?.txHash && <p className="mt-0.5 font-mono text-[11px] text-stone-400">{l.payment.provider} tx {l.payment.txHash.slice(0, 18)}…</p>}
+                    {l.payment?.explorerUrl ? (
+                      <p className="mt-0.5 text-[11px] text-stone-500">Paid {l.payment.shop} on Kite ·{" "}
+                        <a className="font-mono underline" href={l.payment.explorerUrl} target="_blank" rel="noreferrer">{l.payment.txHash?.slice(0, 12)}…</a></p>
+                    ) : l.payment?.txHash && <p className="mt-0.5 font-mono text-[11px] text-stone-400">demo payment {l.payment.txHash.slice(0, 12)}…</p>}
                   </li>
                 ))}
               </ul>

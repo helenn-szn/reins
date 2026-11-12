@@ -65,6 +65,9 @@ export type Payment = {
   status: "paid" | "failed";
   txHash?: string;
   provider: "mock" | "kite";
+  shop?: string; // the demo shop that was paid (kite mode)
+  explorerUrl?: string; // the payment on KiteScan
+  orderId?: string;
 };
 
 export type LogEntry = {
