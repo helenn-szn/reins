@@ -90,6 +90,8 @@ export default function ReinsApp() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const st: AppState = { ...INITIAL, ...JSON.parse(saved) };
+        st.safetyFloor = Math.max(0, st.safetyFloor);
+        st.habits = st.habits.map((h) => ({ ...h, capPerPurchase: Math.max(0, h.capPerPurchase) }));
         // A payment cut off by a reload never got its answer: show it as needing a check, not as waiting
         st.log = st.log.map((l) => (l.outcome === "paying" || (l.outcome === "waiting" && l.decision.action !== "ask"))
           ? { ...l, outcome: "failed", decision: { ...l.decision, reason: "The page closed while this was paying. Check the agent wallet on KiteScan before trying again." } } : l);
@@ -508,8 +510,8 @@ export default function ReinsApp() {
                       <div className="flex items-center gap-2 text-xs">
                         {h.autopilot ? <Chip tone="good">autopilot</Chip> : s.mode === "trust_ladder" && <Chip tone="muted">{h.approvalsInARow}/{TRUST_LADDER_STEPS}</Chip>}
                         <span className="text-stone-500">limit $</span>
-                        <input type="number" className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right" value={h.capPerPurchase}
-                          onChange={(e) => setHabit(h.id, { capPerPurchase: Number(e.target.value) || 0 })} />
+                        <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right" value={h.capPerPurchase}
+                          onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} />
                         <span className="hidden text-stone-400 sm:inline">({describeLimit(h)})</span>
                       </div>
                     )}
@@ -619,8 +621,8 @@ export default function ReinsApp() {
                     <span>{h.name}</span>
                     <span className="flex items-center gap-2 text-xs text-stone-500">
                       limit $
-                      <input type="number" className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right text-stone-900" value={h.capPerPurchase}
-                        onChange={(e) => setHabit(h.id, { capPerPurchase: Number(e.target.value) || 0 })} aria-label={`${h.name} limit`} />
+                      <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right text-stone-900" value={h.capPerPurchase}
+                        onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} aria-label={`${h.name} limit`} />
                       <span className="hidden sm:inline">({describeLimit(h)})</span>
                     </span>
                   </li>
@@ -631,8 +633,8 @@ export default function ReinsApp() {
 
             <Card title="Safety floor">
               <label className="flex items-center gap-2 text-sm">
-                $<input type="number" className="w-24 rounded-lg border border-stone-300 px-2 py-1" value={s.safetyFloor}
-                  onChange={(e) => update((p) => ({ ...p, safetyFloor: Number(e.target.value) || 0 }))} aria-label="Safety floor" />
+                $<input type="number" min={0} className="w-24 rounded-lg border border-stone-300 px-2 py-1" value={s.safetyFloor}
+                  onChange={(e) => update((p) => ({ ...p, safetyFloor: Math.max(0, Number(e.target.value) || 0) }))} aria-label="Safety floor" />
               </label>
               <p className="mt-1 text-xs text-stone-500">Safe Mode switches on by itself when your wallet can&apos;t cover the next 2 weeks of bills plus this amount.</p>
             </Card>
