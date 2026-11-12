@@ -43,11 +43,13 @@ export function upcomingObligations(s: Pick<EngineState, "habits" | "today">) {
   return { items, total: round2(items.reduce((a, b) => a + b.amount, 0)) };
 }
 
-// Safe Mode switches on when the user's real wallet can't cover what's coming plus their safety floor.
+// Safe Mode switches on by itself when the user's real wallet can't cover what's coming plus
+// their safety floor. The user can also switch it on by hand at any time.
 export function safeModeStatus(s: EngineState) {
   const upcoming = upcomingObligations(s);
   const needed = round2(upcoming.total + s.safetyFloor);
-  return { active: s.walletBalance < needed, needed, upcoming };
+  const auto = s.walletBalance < needed;
+  return { active: auto || Boolean(s.forceSafeMode), auto, manual: Boolean(s.forceSafeMode) && !auto, needed, upcoming };
 }
 
 export function ruleDecision(req: PurchaseRequest, s: EngineState): Decision {
@@ -69,8 +71,11 @@ export function ruleDecision(req: PurchaseRequest, s: EngineState): Decision {
 
   // 2. Safe Mode overrides every mode
   if (safe.active) {
-    if (habit?.kind === "lifestyle") return d("block", `Paused in Safe Mode: your wallet has $${s.walletBalance.toFixed(2)} and you need $${safe.needed.toFixed(2)} for upcoming payments plus your safety floor.`);
-    return d("ask", `Safe Mode is on (wallet $${s.walletBalance.toFixed(2)}, needed $${safe.needed.toFixed(2)}), so every payment needs your approval.`);
+    const why = safe.auto
+      ? `your wallet has $${s.walletBalance.toFixed(2)} and you need $${safe.needed.toFixed(2)} for upcoming payments plus your safety floor`
+      : "you switched Safe Mode on";
+    if (habit?.kind === "lifestyle") return d("block", `Paused in Safe Mode: ${why}.`);
+    return d("ask", `Safe Mode is on (${why}), so every payment needs your approval.`);
   }
 
   // 3. Would this purchase put upcoming bills at risk?

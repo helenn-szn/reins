@@ -84,4 +84,5 @@ export type EngineState = {
   potBalance: number; // Kite Passport spending pot (USD)
   onDemandAutoLimit: number; // on-demand purchases up to this can skip approval in full autopilot
   spent: Record<string, number>; // "<habitId>:<periodKey>" -> USD already spent in that period
+  forceSafeMode?: boolean; // the user switched Safe Mode on by hand
 };
