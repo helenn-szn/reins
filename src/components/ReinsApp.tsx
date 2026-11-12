@@ -199,6 +199,7 @@ export default function ReinsApp() {
   // ---------------- UI ----------------
   const [page, setPage] = useState<Page>("dashboard");
   const [notifOpen, setNotifOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
   const [addressDraft, setAddressDraft] = useState("");
   const hasData = s.habits.length > 0;
@@ -276,30 +277,35 @@ export default function ReinsApp() {
       </aside>
 
       <div className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-5 sm:px-6 lg:ml-60 lg:px-8">
-        {/* Header: welcome, notifications, connect wallet */}
-        <header className="relative mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="lg:hidden"><Logo size={40} /></span>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-              <p className="text-sm text-stone-500">Spend on autopilot. Keep the reins.</p>
+        {/* Header: menu (phone), welcome, notifications, connect wallet (desktop) */}
+        <header className="relative mb-6 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={() => setMenuOpen(true)} aria-label="Open menu" aria-expanded={menuOpen}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 lg:hidden">
+              <Icon name="menu" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-semibold tracking-tight">Welcome back</h1>
+              <p className="truncate text-sm text-stone-500">Spend on autopilot. Keep the reins.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button onClick={() => setNotifOpen((o) => !o)} aria-label={`Notifications (${alertCount})`} aria-expanded={notifOpen}
               className="relative grid h-10 w-10 place-items-center rounded-full border border-stone-200 bg-white text-stone-700 hover:bg-stone-50">
               <Icon name="bell" />
               {alertCount > 0 && <span className={`absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-semibold text-white ${safe?.active ? "bg-safe-600" : "bg-brand-500"}`}>{alertCount}</span>}
             </button>
+            <div className="hidden lg:block">
             {s.walletRead && !s.useDemoBalance ? (
-              <button onClick={() => { setAddressDraft(s.walletAddress); setWalletOpen(true); }}
-                className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium hover:bg-stone-50">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />{shortAddr(s.walletAddress)}
-              </button>
-            ) : (
-              <button onClick={() => { setAddressDraft(s.walletAddress); setWalletOpen(true); }}
-                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-50 hover:bg-stone-700">Connect wallet</button>
-            )}
+                <button onClick={() => { setAddressDraft(s.walletAddress); setWalletOpen(true); }}
+                  className="flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium hover:bg-stone-50">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />{shortAddr(s.walletAddress)}
+                </button>
+              ) : (
+                <button onClick={() => { setAddressDraft(s.walletAddress); setWalletOpen(true); }}
+                  className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-50 hover:bg-stone-700">Connect wallet</button>
+              )}
+            </div>
           </div>
 
           {notifOpen && (
@@ -321,14 +327,47 @@ export default function ReinsApp() {
           )}
         </header>
 
-        {/* Phone navigation */}
-        <nav className="-mx-1 mb-5 flex gap-1 overflow-x-auto lg:hidden">
-          {nav.map((n) => (
-            <button key={n.id} onClick={() => go(n.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${page === n.id ? "bg-stone-900 text-stone-50" : "text-stone-600"}`}>
-              {n.label}{n.badge ? ` (${n.badge})` : ""}
-            </button>
-          ))}
-        </nav>
+        {/* Phone menu: the pages and Connect wallet, behind the hamburger */}
+        {menuOpen && (
+          <div className="fixed inset-0 z-30 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
+            <div className="relative flex h-full w-72 max-w-[85vw] flex-col bg-[#1c1917] px-4 py-5 text-[#d6d3d1] shadow-xl">
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-3"><Logo size={36} /><span className="text-lg font-semibold text-white">Reins</span></div>
+                <button onClick={() => setMenuOpen(false)} aria-label="Close menu" className="grid h-9 w-9 place-items-center rounded-full text-white hover:bg-white/10">✕</button>
+              </div>
+              <nav className="mt-8 space-y-1">
+                {nav.map((n) => (
+                  <button key={n.id} onClick={() => { go(n.id); setMenuOpen(false); }}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition ${page === n.id ? "bg-white/10 text-white" : "hover:bg-white/5 hover:text-white"}`}>
+                    <Icon name={n.icon} />
+                    <span className="flex-1 text-left">{n.label}</span>
+                    {n.badge !== undefined && <span className="rounded-full bg-brand-500 px-2 text-xs text-white">{n.badge}</span>}
+                  </button>
+                ))}
+              </nav>
+              <div className="mt-6 px-1">
+                {s.walletRead && !s.useDemoBalance ? (
+                  <button onClick={() => { setMenuOpen(false); setAddressDraft(s.walletAddress); setWalletOpen(true); }}
+                    className="flex w-full items-center justify-center gap-2 rounded-full border border-white/20 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />{shortAddr(s.walletAddress)}
+                  </button>
+                ) : (
+                  <button onClick={() => { setMenuOpen(false); setAddressDraft(s.walletAddress); setWalletOpen(true); }}
+                    className="w-full rounded-full bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600">Connect wallet</button>
+                )}
+              </div>
+              <div className={`mt-auto rounded-xl px-3 py-2.5 text-xs ${safe?.active ? "bg-safe-600 text-white" : "bg-white/5"}`}>
+                <p className="flex items-center gap-2 font-medium text-white">
+                  <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-[#fff]" : "bg-emerald-400"}`} />
+                  {safe?.active ? "Safe Mode is on" : "All good"}
+                </p>
+                <p className={`mt-0.5 ${safe?.active ? "text-white/80" : "text-[#78716c]"}`}>{MODES.find((m) => m.id === s.mode)?.label}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
@@ -702,12 +741,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-type IconName = "home" | "check" | "habits" | "activity" | "settings" | "bell";
+type IconName = "home" | "check" | "habits" | "activity" | "settings" | "bell" | "menu";
 
 function Icon({ name }: { name: IconName }) {
   const d = {
     home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
     check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+    menu: "M4 7h16M4 12h16M4 17h16",
     bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0",
     habits: "M4 7h10M4 12h16M4 17h7M17 4.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM14 14.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z",
     activity: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
