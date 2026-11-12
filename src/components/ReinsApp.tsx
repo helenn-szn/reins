@@ -6,7 +6,7 @@ import { describeCadence, describeLimit } from "@/lib/habits";
 import { isDue, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
 import { addDays, pretty } from "@/lib/dates";
 import { SHOPS } from "@/lib/shopsInfo";
-import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
+import QRCode from "qrcode";
 
 type WalletRead = { symbol: string; balance: number; native: number; explorer: string };
 
@@ -55,7 +55,7 @@ export default function ReinsApp() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; shopPayTo?: string; payScale?: number; token?: string; tokenDecimals?: number } | null>(null);
-  const [topUpNote, setTopUpNote] = useState<{ text: string; url?: string } | null>(null);
+  const [fundOpen, setFundOpen] = useState(false);
   const [agentWallet, setAgentWallet] = useState<{ balance: number; symbol: string; gas: number } | null>(null);
   const [shopWallet, setShopWallet] = useState<{ balance: number; symbol: string } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
@@ -231,38 +231,6 @@ export default function ReinsApp() {
     if (!r.ok) throw new Error(data.error);
     update((p) => ({ ...p, useDemoBalance: false, walletRead: { symbol: data.token.symbol, balance: data.token.balance, native: data.native.balance, explorer: data.explorer } }));
   }
-  // Real top-up: the user's MetaMask sends tokens to the Reins agent wallet on Kite, then the pot re-reads the chain
-  async function fundPot(amountUsd: number) {
-    if (!status?.agent || !status.token) throw new Error("Live payments aren't set up.");
-    const eth = browserWallet();
-    const [from] = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-    await switchToKite(eth);
-    const value = parseUnits((amountUsd * (status.payScale || 1)).toFixed(6), status.tokenDecimals ?? 18);
-    const data = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [status.agent as `0x${string}`, value] });
-    setBusy("Confirm the top-up in MetaMask…");
-    let hash: string;
-    try {
-      hash = (await eth.request({ method: "eth_sendTransaction", params: [{ from, to: status.token, data }] })) as string;
-    } catch (e) {
-      if ((e as { code?: number }).code === 4001) throw new Error("You cancelled the top-up in MetaMask.");
-      throw e;
-    }
-    setBusy("Adding to your spending pot on Kite…");
-    const url = `https://testnet.kitescan.ai/tx/${hash}`;
-    for (let i = 0; i < 40; i++) {
-      const rc = (await eth.request({ method: "eth_getTransactionReceipt", params: [hash] })) as { status?: string } | null;
-      if (rc?.status === "0x1") {
-        await readAgentWallet();
-        if (ref.current.walletRead && !ref.current.useDemoBalance) await readWallet().catch(() => {});
-        setTopUpNote({ text: `Added ${usd(amountUsd)} to your spending pot.`, url });
-        return;
-      }
-      if (rc?.status === "0x0") throw new Error("The top-up failed on Kite. Nothing was moved.");
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-    setTopUpNote({ text: "Top-up sent. It's taking a while to confirm.", url });
-  }
-
   function topUp(amount: number) {
     update((p) => {
       const move = p.useDemoBalance ? Math.min(amount, p.demoBalance) : amount; // can't move more than the wallet holds
@@ -505,17 +473,7 @@ export default function ReinsApp() {
                   </p>
                 )}
                 {status?.payments === "kite" && status.agent ? (
-                  <div className="mt-4">
-                    <p className="text-xs font-medium text-stone-600">Top up from your wallet</p>
-                    <div className="mt-1.5 grid grid-cols-3 gap-2">
-                      {[10, 20, 50].map((n) => (
-                        <Button key={n} variant="secondary" disabled={!!busy} onClick={() => run("Opening MetaMask…", () => fundPot(n))}>+{usd(n).replace(".00", "")}</Button>
-                      ))}
-                    </div>
-                    {topUpNote && (
-                      <p className="mt-2 text-xs text-emerald-800">{topUpNote.text}{topUpNote.url && <> <a className="underline" href={topUpNote.url} target="_blank" rel="noreferrer">View on KiteScan</a></>}</p>
-                    )}
-                  </div>
+                  <Button className="mt-4 w-full" variant="secondary" onClick={() => setFundOpen(true)}>Add money to spending pot</Button>
                 ) : (
                   <Button className="mt-4 w-full" variant="secondary" onClick={() => topUp(40)}>Move $40 to spending pot</Button>
                 )}
@@ -703,6 +661,10 @@ export default function ReinsApp() {
         )}
       </div>
 
+      {fundOpen && status?.agent && (
+        <AddMoneyDialog address={status.agent} payScale={status.payScale || 1} onClose={() => setFundOpen(false)} onReceived={readAgentWallet} />
+      )}
+
       {walletOpen && (
         <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 px-4" onClick={() => setWalletOpen(false)}>
           <div role="dialog" aria-modal="true" aria-label="Connect wallet" className="w-full max-w-md rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
@@ -736,22 +698,6 @@ function browserWallet(): Eip1193 {
   const eth = injected?.providers?.find((x) => x.isMetaMask) ?? injected;
   if (!eth) throw new Error("No browser wallet found. Install MetaMask, or paste your address instead.");
   return eth;
-}
-
-// Make sure the wallet is on Kite's test network, adding it to MetaMask if needed
-async function switchToKite(eth: Eip1193) {
-  const id = "0x940"; // 2368
-  if ((await eth.request({ method: "eth_chainId" })) === id) return;
-  try {
-    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: id }] });
-  } catch (e) {
-    const code = (e as { code?: number }).code;
-    if (code === 4001) throw new Error("Switch MetaMask to KiteAI Testnet to top up.");
-    await eth.request({ method: "wallet_addEthereumChain", params: [{
-      chainId: id, chainName: "KiteAI Testnet", nativeCurrency: { name: "KITE", symbol: "KITE", decimals: 18 },
-      rpcUrls: ["https://rpc-testnet.gokite.ai/"], blockExplorerUrls: ["https://testnet.kitescan.ai"],
-    }] });
-  }
 }
 
 async function browserWalletAddress(): Promise<string> {
@@ -855,6 +801,80 @@ function HorseBackdrop() {
         <path className="rein-flow" d="M26 69 C45 88 74 85 120 62" stroke="#F26B1D" strokeOpacity="0.85" strokeWidth="0.6" />
       </g>
     </svg>
+  );
+}
+
+// Fund the spending pot like a Kite Passport: show its deposit address, the user sends from any wallet,
+// and Reins watches the chain for the money to arrive. Reins never asks to pull from the user's wallet.
+const NETWORKS = [
+  { name: "KiteAI Testnet", live: true },
+  { name: "Base" }, { name: "Solana" }, { name: "Polygon" }, { name: "Avalanche" }, { name: "Card" },
+];
+function AddMoneyDialog({ address, payScale, onClose, onReceived }: { address: string; payScale: number; onClose: () => void; onReceived: () => void }) {
+  const [qr, setQr] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [received, setReceived] = useState<{ amount: number; symbol: string } | null>(null);
+  const [symbol, setSymbol] = useState("USDT");
+  useEffect(() => { QRCode.toDataURL(address, { margin: 1, width: 360, color: { dark: "#1c1917", light: "#ffffff" } }).then(setQr).catch(() => {}); }, [address]);
+
+  // Watch the pot's balance on Kite; anything above where it started is a deposit
+  useEffect(() => {
+    let start: number | null = null, stop = false;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/wallet?address=${address}`).then((x) => x.json());
+        if (stop || !r.token) return;
+        setSymbol(r.token.symbol);
+        if (start === null) start = r.token.balance;
+        else if (r.token.balance > start + 1e-9) {
+          setReceived({ amount: Math.round((r.token.balance - start) * 1e6) / 1e6, symbol: r.token.symbol });
+          onReceived();
+        }
+      } catch { /* try again next tick */ }
+    };
+    tick();
+    const id = setInterval(tick, 4000);
+    return () => { stop = true; clearInterval(id); };
+  }, [address, onReceived]);
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard blocked */ }
+  };
+  return (
+    <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 px-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label="Add money" className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold">Add money to your spending pot</h2>
+        <p className="mt-1 text-sm text-stone-500">Send {symbol} from any wallet to your pot&apos;s address. Reins only spends what you put here, and never pulls from your own wallet.</p>
+
+        <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Network">
+          {NETWORKS.map((n) => (
+            <span key={n.name} className={`rounded-full px-2.5 py-1 text-xs ${n.live ? "bg-brand-500 font-medium text-white" : "bg-stone-100 text-stone-400"}`}>{n.name}</span>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11px] text-stone-500">Base, Solana, Polygon, Avalanche and card come with Kite Agent Passport.</p>
+
+        <div className="mt-4 grid place-items-center rounded-xl bg-[#fff] p-3">
+          {qr ? <img src={qr} alt={`QR code for ${address}`} width={180} height={180} /> : <div className="h-[180px] w-[180px]" />}
+        </div>
+        <p className="mt-3 text-xs text-stone-500">Deposit address · {symbol} on KiteAI Testnet</p>
+        <div className="mt-1 flex items-center gap-2 rounded-lg border border-stone-200 p-2">
+          <code className="min-w-0 flex-1 break-all text-[13px]">{address}</code>
+          <Button variant="secondary" onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
+        </div>
+        <p className="mt-2 text-xs text-amber-800">Send only {symbol} on KiteAI Testnet. Other tokens or networks sent here will be lost.</p>
+        {payScale !== 1 && <p className="mt-1 text-xs text-stone-500">On testnet, 1 {symbol} adds ${Math.round(1 / payScale)} to your pot.</p>}
+
+        <div className={`mt-4 rounded-xl p-3 text-sm ${received ? "bg-emerald-100 text-emerald-800" : "bg-stone-50 text-stone-600"}`} aria-live="polite">
+          {received ? (
+            <>Received {received.amount} {received.symbol}: {usd(received.amount / payScale)} added to your pot.{" "}
+              <a className="underline" href={`https://testnet.kitescan.ai/address/${address}`} target="_blank" rel="noreferrer">View on KiteScan</a></>
+          ) : (
+            <span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />Waiting for your deposit…</span>
+          )}
+        </div>
+        <div className="mt-5 flex justify-end"><Button variant="secondary" onClick={onClose}>{received ? "Done" : "Close"}</Button></div>
+      </div>
+    </div>
   );
 }
 

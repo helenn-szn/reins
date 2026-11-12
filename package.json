@@ -12,6 +12,7 @@
     "next": "^16.4.6",
     "openai": "^5.23.2",
     "papaparse": "^5.5.3",
+    "qrcode": "^1.5.4",
     "react": "^19.2.9",
     "react-dom": "^19.2.9",
     "viem": "^2.37.9"
@@ -20,6 +21,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/papaparse": "^5.3.16",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
