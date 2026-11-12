@@ -219,22 +219,6 @@ export default function ReinsApp() {
     { id: "settings", label: "Settings", icon: "settings" },
   ];
 
-  const demo = (
-    <details className="rounded-xl border border-white/10 px-3 py-2.5 text-sm text-white/70">
-      <summary className="cursor-pointer">Demo clock: {pretty(s.today)}</summary>
-      <div className="mt-3 space-y-3">
-        <div className="flex gap-2">
-          <Button className="flex-1" disabled={!!busy} onClick={() => run("Running the day…", () => runDays(1))}>+1 day</Button>
-          <Button className="flex-1" variant="ghost" disabled={!!busy} onClick={() => run("Running the week…", () => runDays(7))}>+1 week</Button>
-        </div>
-        <label className="block text-xs">
-          Demo wallet {usd(s.demoBalance)}
-          <input type="range" min={0} max={300} step={5} value={s.demoBalance} className="mt-1 w-full accent-brand-500"
-            onChange={(e) => update((p) => ({ ...p, useDemoBalance: true, demoBalance: Number(e.target.value) }))} />
-        </label>
-      </div>
-    </details>
-  );
 
   return (
     <div className="min-h-screen lg:flex">
@@ -242,7 +226,7 @@ export default function ReinsApp() {
       <aside className="hidden bg-night text-white/75 lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col lg:px-4 lg:py-6">
         <div className="flex items-center gap-2 px-2">
           <Logo size={40} tile={false} />
-          <span className="font-display text-2xl text-white">Reins</span>
+          <span className="font-semibold tracking-tight text-2xl text-white">Reins</span>
         </div>
         <nav className="mt-10 space-y-1">
           {nav.map((n) => (
@@ -260,18 +244,17 @@ export default function ReinsApp() {
         <div className="mt-auto space-y-3">
           <div className="rounded-xl bg-night-2 px-3 py-3 text-sm">
             <p className="flex items-center gap-2 text-white">
-              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-brand-500 ring-2 ring-white/40" : "bg-white"}`} />
-              {safe?.active ? "Safe Mode is on" : "Reins is riding"}
+              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-safe-600 ring-2 ring-white/40" : "bg-emerald-400"}`} />
+              {safe?.active ? "Safe Mode is on" : "All good"}
             </p>
             <p className="mt-1 text-xs text-white/55">{modeLabel}</p>
           </div>
-          {demo}
         </div>
       </aside>
 
       {/* Top bar + tabs (phone) */}
       <div className="sticky top-0 z-10 bg-night px-4 pt-4 text-white lg:hidden">
-        <div className="flex items-center gap-2"><Logo size={32} tile={false} /><span className="font-display text-xl">Reins</span></div>
+        <div className="flex items-center gap-2"><Logo size={32} tile={false} /><span className="font-semibold tracking-tight text-xl">Reins</span></div>
         <nav className="-mx-1 mt-3 flex gap-1 overflow-x-auto pb-3">
           {nav.map((n) => (
             <button key={n.id} onClick={() => go(n.id)}
@@ -291,7 +274,7 @@ export default function ReinsApp() {
               <header className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <p className="text-sm text-ink/60">{pretty(s.today)}</p>
-                  <h1 className="font-display text-3xl sm:text-4xl">{greeting}.</h1>
+                  <h1 className="font-semibold tracking-tight text-3xl sm:text-4xl">{greeting}.</h1>
                 </div>
                 <form className="flex w-full gap-2 sm:w-96" onSubmit={(e) => { e.preventDefault(); if (request.trim()) run("Asking Reins…", onDemand); }}>
                   <input className="min-w-0 flex-1 rounded-full border border-ink/15 bg-white px-4 py-2.5 text-sm outline-none focus:border-brand-500"
@@ -396,14 +379,13 @@ export default function ReinsApp() {
                 </Panel>
               </div>
 
-              <div className="rounded-2xl bg-night p-3 lg:hidden">{demo}</div>
             </div>
           )}
 
           {page === "habits" && (
             <div className="space-y-5">
               <header>
-                <h1 className="font-display text-3xl">Your habits</h1>
+                <h1 className="font-semibold tracking-tight text-3xl">Your habits</h1>
                 <p className="mt-1 text-sm text-ink/60">Found in {s.statement?.transactions ?? 0} transactions. Switch on only what Reins may pay for.</p>
               </header>
               <Panel>
@@ -441,14 +423,14 @@ export default function ReinsApp() {
 
           {page === "activity" && (
             <div className="space-y-5">
-              <h1 className="font-display text-3xl">Activity</h1>
+              <h1 className="font-semibold tracking-tight text-3xl">Activity</h1>
               <Panel><ActivityList entries={done} categoryOf={categoryOf} /></Panel>
             </div>
           )}
 
           {page === "settings" && (
             <div className="max-w-2xl space-y-5">
-              <h1 className="font-display text-3xl">Settings</h1>
+              <h1 className="font-semibold tracking-tight text-3xl">Settings</h1>
               <Panel title="How much should Reins ask?">
                 <div className="space-y-2">
                   {MODES.map((m) => (
@@ -487,6 +469,20 @@ export default function ReinsApp() {
                 <p className="mt-1 text-xs text-ink/60">Safe Mode switches on when your wallet can&apos;t cover the next 2 weeks of bills plus this amount.</p>
               </Panel>
 
+              <Panel title="Demo controls">
+                <p className="text-sm text-ink/60">Simulated date: {pretty(s.today)}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button disabled={!!busy} onClick={() => run("Running the day…", () => runDays(1))}>+1 day</Button>
+                  <Button variant="secondary" disabled={!!busy} onClick={() => run("Running the week…", () => runDays(7))}>+1 week</Button>
+                </div>
+                <label className="mt-4 block text-sm text-ink/70">
+                  Demo wallet balance: {usd(s.demoBalance)}
+                  <input type="range" min={0} max={300} step={5} value={s.demoBalance} className="mt-1 w-full accent-brand-500"
+                    onChange={(e) => update((p) => ({ ...p, useDemoBalance: true, demoBalance: Number(e.target.value) }))} />
+                </label>
+                {busy && <p className="mt-2 text-xs text-ink/60">{busy}</p>}
+              </Panel>
+
               <div className="space-y-2 px-1 text-xs text-ink/60">
                 <p>SERV: {status?.serv.mode === "live" ? `live (${status.serv.model})` : "mock mode"}. Payments: {status?.payments ?? "…"}.</p>
                 <button className="font-medium text-red-700" onClick={() => { if (confirm("Start over with a new statement?")) { update(() => INITIAL); go("overview"); } }}>Start over</button>
@@ -511,22 +507,22 @@ function ReinMeter({ wallet, needed, upcomingTotal, floor, pot, active, onTopUp 
   const fill = Math.min(100, (wallet / max) * 100);
   const buckle = Math.min(100, (needed / max) * 100);
   const slack = wallet - needed;
-  const muted = active ? "text-black/70" : "text-white/65";
+  const muted = "text-white/65";
   const mood = active ? "Safe Mode is on" : slack < needed * 0.5 ? "Getting tight" : "Plenty of slack";
   return (
-    <section className={`overflow-hidden rounded-3xl p-6 sm:p-8 ${active ? "bg-brand-500 text-black" : "bg-night text-white"}`}>
+    <section className={`overflow-hidden rounded-3xl p-6 sm:p-8 ${active ? "bg-safe-600 text-white" : "bg-night text-white"}`}>
       <div className="flex flex-wrap items-start justify-between gap-6">
         <div>
           <p className={`text-sm ${muted}`}>Your wallet</p>
-          <p className="font-display text-5xl leading-tight sm:text-6xl">{usd(wallet)}</p>
-          <p className={`mt-1 text-sm ${active ? "text-black/80" : "text-white/75"}`}>
+          <p className="font-semibold tracking-tight text-5xl leading-tight sm:text-6xl">{usd(wallet)}</p>
+          <p className="mt-1 text-sm text-white/75">
             {active ? `${usd(-slack)} short of what the next 2 weeks need.` : `${usd(slack)} of slack before Safe Mode.`}
           </p>
         </div>
-        <div className={`rounded-2xl px-4 py-3 ${active ? "bg-black/10" : "bg-white/10"}`}>
+        <div className="rounded-2xl bg-white/10 px-4 py-3">
           <p className={`text-xs ${muted}`}>Spending pot (Kite Passport)</p>
-          <p className="font-display text-2xl">{usd(pot)}</p>
-          <button className={`mt-1 text-sm font-semibold underline-offset-2 hover:underline ${active ? "text-black underline" : "text-accent"}`} onClick={onTopUp}>Top up $40</button>
+          <p className="font-semibold tracking-tight text-2xl">{usd(pot)}</p>
+          <button className={`mt-1 text-sm font-semibold underline-offset-2 hover:underline ${active ? "text-white underline" : "text-accent"}`} onClick={onTopUp}>Top up $40</button>
         </div>
       </div>
 
@@ -536,8 +532,8 @@ function ReinMeter({ wallet, needed, upcomingTotal, floor, pot, active, onTopUp 
           <span className={muted}>Safe Mode below {usd(needed)}</span>
         </div>
         <div className="relative h-7" role="img" aria-label={`Wallet ${usd(wallet)}; Safe Mode starts below ${usd(needed)}`}>
-          <div className={`absolute inset-0 rounded-full ${active ? "bg-black/15" : "bg-white/15"}`} />
-          <div className={`rein-fill absolute inset-y-0 left-0 rounded-full ${active ? "bg-black" : "bg-brand-500"}`} style={{ width: `${fill}%` }} />
+          <div className="absolute inset-0 rounded-full bg-white/15" />
+          <div className={`rein-fill absolute inset-y-0 left-0 rounded-full ${active ? "bg-white/80" : "bg-brand-500"}`} style={{ width: `${fill}%` }} />
           <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/40" />
           <div className="absolute -inset-y-1.5 w-4 -translate-x-1/2 rounded-sm border-[3px] border-white bg-transparent" style={{ left: `${buckle}%` }}>
             <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 bg-white" />
@@ -577,7 +573,7 @@ function Ladder({ steps }: { steps: number }) {
 }
 
 function PlanTag({ plan }: { plan: "auto" | "asks" | "paused" }) {
-  const t = { auto: ["Auto", "bg-[#f0f0f0] text-[#141414]"], asks: ["Asks you", "bg-brand-50 text-brand-700"], paused: ["Paused", "bg-black text-white"] }[plan];
+  const t = { auto: ["Auto", "bg-[#f0f0f0] text-[#141414]"], asks: ["Asks you", "bg-brand-50 text-brand-700"], paused: ["Paused", "bg-safe-50 text-safe-700"] }[plan];
   return <span className={`w-20 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-medium ${t[1]}`}>{t[0]}</span>;
 }
 
@@ -586,7 +582,7 @@ function DateBadge({ date }: { date: string }) {
   return (
     <span className="w-10 shrink-0 text-center leading-tight">
       <span className="block text-[11px] text-ink/55">{d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}</span>
-      <span className="block font-display text-lg">{d.getUTCDate()}</span>
+      <span className="block font-semibold tracking-tight text-lg">{d.getUTCDate()}</span>
     </span>
   );
 }
@@ -601,15 +597,15 @@ function EmptyNote({ text, action, onClick }: { text: string; action: string; on
 }
 
 const CATEGORY_ICONS: Record<string, { d: string; bg: string }> = {
-  coffee: { d: "M5 9h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 4v2M12.5 4v2", bg: "bg-[#f0f0f0] text-[#141414]" },
-  nightlife: { d: "M6 4h12l-6 8zM12 12v7M8.5 20h7", bg: "bg-[#f0f0f0] text-[#141414]" },
-  rides: { d: "M5 16v-4l2-5h10l2 5v4M4 16h16M7.5 19v-3M16.5 19v-3M8 12.5h.01M16 12.5h.01", bg: "bg-[#f0f0f0] text-[#141414]" },
-  food: { d: "M3.5 11h17a8.5 8.5 0 0 1-17 0zM9 7.5c0-1 .8-2 1.8-2M13.5 7.5c0-1 .8-2 1.8-2", bg: "bg-[#f0f0f0] text-[#141414]" },
-  groceries: { d: "M5 9h14l-1.2 11H6.2zM9 9V7a3 3 0 0 1 6 0v2", bg: "bg-[#f0f0f0] text-[#141414]" },
-  subscriptions: { d: "M20 12a8 8 0 1 1-2.4-5.7M20 4.5V9h-4.5M10.5 9.5v5l4-2.5z", bg: "bg-[#f0f0f0] text-[#141414]" },
-  phone: { d: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2", bg: "bg-[#f0f0f0] text-[#141414]" },
-  rent: { d: "M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5h4v5", bg: "bg-[#f0f0f0] text-[#141414]" },
-  other: { d: "M4 12V4h8l8 8-8 8zM8 8h.01", bg: "bg-[#f0f0f0] text-[#141414]" },
+  coffee: { d: "M5 9h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 4v2M12.5 4v2", bg: "bg-stone-100 text-stone-800" },
+  nightlife: { d: "M6 4h12l-6 8zM12 12v7M8.5 20h7", bg: "bg-stone-100 text-stone-800" },
+  rides: { d: "M5 16v-4l2-5h10l2 5v4M4 16h16M7.5 19v-3M16.5 19v-3M8 12.5h.01M16 12.5h.01", bg: "bg-stone-100 text-stone-800" },
+  food: { d: "M3.5 11h17a8.5 8.5 0 0 1-17 0zM9 7.5c0-1 .8-2 1.8-2M13.5 7.5c0-1 .8-2 1.8-2", bg: "bg-stone-100 text-stone-800" },
+  groceries: { d: "M5 9h14l-1.2 11H6.2zM9 9V7a3 3 0 0 1 6 0v2", bg: "bg-stone-100 text-stone-800" },
+  subscriptions: { d: "M20 12a8 8 0 1 1-2.4-5.7M20 4.5V9h-4.5M10.5 9.5v5l4-2.5z", bg: "bg-stone-100 text-stone-800" },
+  phone: { d: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2", bg: "bg-stone-100 text-stone-800" },
+  rent: { d: "M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5h4v5", bg: "bg-stone-100 text-stone-800" },
+  other: { d: "M4 12V4h8l8 8-8 8zM8 8h.01", bg: "bg-stone-100 text-stone-800" },
 };
 
 function CategoryIcon({ category }: { category: string }) {
@@ -636,7 +632,7 @@ function Icon({ name }: { name: IconName }) {
 }
 
 function ActivityList({ entries, categoryOf }: { entries: LogEntry[]; categoryOf: (habitId?: string) => string }) {
-  if (!entries.length) return <p className="py-4 text-sm text-ink/60">Nothing paid yet. Approve a payment or move the demo clock forward.</p>;
+  if (!entries.length) return <p className="py-4 text-sm text-ink/60">Nothing paid yet. Approve a payment, or use the demo controls in Settings.</p>;
   return (
     <ul className="divide-y divide-ink/10">
       {entries.map((l) => (
@@ -686,7 +682,7 @@ function Upload({ onCsv, busy }: { onCsv: (csv: string) => void; busy: string | 
   return (
     <div className="text-center">
       <div className="flex justify-center"><Logo size={96} tile={false} /></div>
-      <h1 className="mt-6 font-display text-4xl sm:text-5xl">Spend on autopilot.<br />Keep the reins.</h1>
+      <h1 className="mt-6 font-semibold tracking-tight text-4xl sm:text-5xl">Spend on autopilot.<br />Keep the reins.</h1>
       <p className="mx-auto mt-4 max-w-md text-white/70">Upload a bank statement. Reins finds your regular spending, and nothing runs until you switch it on.</p>
       <div className="mt-8 flex flex-col items-center gap-3">
         <label className="cursor-pointer rounded-full bg-brand-500 px-6 py-3 font-semibold text-white hover:bg-brand-600 focus-within:outline-2 focus-within:outline-white">
@@ -708,7 +704,7 @@ function Panel({ title, action, tone, className = "", children }: { title?: stri
     <section className={`rounded-2xl bg-white px-5 py-4 ${tone === "cognac" ? "border-l-4 border-brand-500" : ""} ${className}`}>
       {(title || action) && (
         <div className="mb-2 flex items-baseline justify-between gap-2">
-          {title && <h2 className="font-display text-lg">{title}</h2>}
+          {title && <h2 className="font-semibold tracking-tight text-lg">{title}</h2>}
           {action}
         </div>
       )}
