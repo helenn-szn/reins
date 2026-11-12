@@ -6,6 +6,7 @@ import { describeCadence, describeLimit } from "@/lib/habits";
 import { isDue, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
 import { addDays, pretty } from "@/lib/dates";
 import { SHOPS } from "@/lib/shopsInfo";
+import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
 
 type WalletRead = { symbol: string; balance: number; native: number; explorer: string };
 
@@ -53,7 +54,8 @@ export default function ReinsApp() {
   const ref = useRef<AppState>(INITIAL);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; shopPayTo?: string; payScale?: number } | null>(null);
+  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; shopPayTo?: string; payScale?: number; token?: string; tokenDecimals?: number } | null>(null);
+  const [topUpNote, setTopUpNote] = useState<{ text: string; url?: string } | null>(null);
   const [agentWallet, setAgentWallet] = useState<{ balance: number; symbol: string; gas: number } | null>(null);
   const [shopWallet, setShopWallet] = useState<{ balance: number; symbol: string } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
@@ -102,7 +104,12 @@ export default function ReinsApp() {
     if (status?.payments !== "kite" || !status.agent) return;
     try {
       const r = await fetch(`/api/wallet?address=${status.agent}`).then((x) => x.json());
-      if (r.token) setAgentWallet({ balance: r.token.balance, symbol: r.token.symbol, gas: r.native.balance });
+      if (r.token) {
+        setAgentWallet({ balance: r.token.balance, symbol: r.token.symbol, gas: r.native.balance });
+        // Live mode: the spending pot IS the agent wallet on Kite (in dollars, using the testnet scale)
+        const pot = Math.round((r.token.balance / (status.payScale || 1)) * 100) / 100;
+        update((p) => (p.potBalance === pot ? p : { ...p, potBalance: pot }));
+      }
       if (status.shopPayTo) {
         const sh = await fetch(`/api/wallet?address=${status.shopPayTo}`).then((x) => x.json());
         if (sh.token) setShopWallet({ balance: sh.token.balance, symbol: sh.token.symbol });
@@ -111,7 +118,9 @@ export default function ReinsApp() {
   }, [status]);
   useEffect(() => { readAgentWallet(); }, [readAgentWallet]);
 
-  const walletBalance = (st: AppState) => (st.useDemoBalance || !st.walletRead ? st.demoBalance : st.walletRead.balance);
+  // A connected wallet's tokens use the same testnet scale as payments (1 USDT = $100 at 1/100)
+  const liveScale = status?.payments === "kite" ? status.payScale || 1 : 1;
+  const walletBalance = (st: AppState) => (st.useDemoBalance || !st.walletRead ? st.demoBalance : Math.round((st.walletRead.balance / liveScale) * 100) / 100);
   const engineState = (st: AppState): EngineState => ({
     today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st),
     safetyFloor: st.safetyFloor, potBalance: st.potBalance, onDemandAutoLimit: st.onDemandAutoLimit, spent: st.spent, forceSafeMode: st.forceSafeMode,
@@ -222,6 +231,38 @@ export default function ReinsApp() {
     if (!r.ok) throw new Error(data.error);
     update((p) => ({ ...p, useDemoBalance: false, walletRead: { symbol: data.token.symbol, balance: data.token.balance, native: data.native.balance, explorer: data.explorer } }));
   }
+  // Real top-up: the user's MetaMask sends tokens to the Reins agent wallet on Kite, then the pot re-reads the chain
+  async function fundPot(amountUsd: number) {
+    if (!status?.agent || !status.token) throw new Error("Live payments aren't set up.");
+    const eth = browserWallet();
+    const [from] = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+    await switchToKite(eth);
+    const value = parseUnits((amountUsd * (status.payScale || 1)).toFixed(6), status.tokenDecimals ?? 18);
+    const data = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [status.agent as `0x${string}`, value] });
+    setBusy("Confirm the top-up in MetaMask…");
+    let hash: string;
+    try {
+      hash = (await eth.request({ method: "eth_sendTransaction", params: [{ from, to: status.token, data }] })) as string;
+    } catch (e) {
+      if ((e as { code?: number }).code === 4001) throw new Error("You cancelled the top-up in MetaMask.");
+      throw e;
+    }
+    setBusy("Adding to your spending pot on Kite…");
+    const url = `https://testnet.kitescan.ai/tx/${hash}`;
+    for (let i = 0; i < 40; i++) {
+      const rc = (await eth.request({ method: "eth_getTransactionReceipt", params: [hash] })) as { status?: string } | null;
+      if (rc?.status === "0x1") {
+        await readAgentWallet();
+        if (ref.current.walletRead && !ref.current.useDemoBalance) await readWallet().catch(() => {});
+        setTopUpNote({ text: `Added ${usd(amountUsd)} to your spending pot.`, url });
+        return;
+      }
+      if (rc?.status === "0x0") throw new Error("The top-up failed on Kite. Nothing was moved.");
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setTopUpNote({ text: "Top-up sent. It's taking a while to confirm.", url });
+  }
+
   function topUp(amount: number) {
     update((p) => {
       const move = p.useDemoBalance ? Math.min(amount, p.demoBalance) : amount; // can't move more than the wallet holds
@@ -463,7 +504,21 @@ export default function ReinsApp() {
                     {safe.auto ? "Below" : "Safe Mode switches on below"} {usd(safe.needed)}: bills due in 2 weeks ({usd(safe.upcoming.total)}) plus your {usd(s.safetyFloor)} floor.
                   </p>
                 )}
-                <Button className="mt-4 w-full" variant="secondary" onClick={() => topUp(40)}>Move $40 to spending pot</Button>
+                {status?.payments === "kite" && status.agent ? (
+                  <div className="mt-4">
+                    <p className="text-xs font-medium text-stone-600">Top up from your wallet</p>
+                    <div className="mt-1.5 grid grid-cols-3 gap-2">
+                      {[10, 20, 50].map((n) => (
+                        <Button key={n} variant="secondary" disabled={!!busy} onClick={() => run("Opening MetaMask…", () => fundPot(n))}>+{usd(n).replace(".00", "")}</Button>
+                      ))}
+                    </div>
+                    {topUpNote && (
+                      <p className="mt-2 text-xs text-emerald-800">{topUpNote.text}{topUpNote.url && <> <a className="underline" href={topUpNote.url} target="_blank" rel="noreferrer">View on KiteScan</a></>}</p>
+                    )}
+                  </div>
+                ) : (
+                  <Button className="mt-4 w-full" variant="secondary" onClick={() => topUp(40)}>Move $40 to spending pot</Button>
+                )}
                 <p className="mt-2 text-xs text-stone-500">{s.walletRead && !s.useDemoBalance ? `Reading ${shortAddr(s.walletAddress)} on Kite testnet.` : "Using the demo balance."}</p>
                 {status?.payments === "kite" && status.agent && (
                   <p className="mt-1 text-xs text-stone-500">
@@ -675,11 +730,32 @@ export default function ReinsApp() {
 
 // Ask the browser wallet (MetaMask etc.) which address to use. Read-only: we only take the address.
 type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; isMetaMask?: boolean; providers?: Eip1193[] };
-async function browserWalletAddress(): Promise<string> {
+function browserWallet(): Eip1193 {
   // With several wallet extensions installed, window.ethereum may not be MetaMask: prefer it when it's there
   const injected = (window as unknown as { ethereum?: Eip1193 }).ethereum;
   const eth = injected?.providers?.find((x) => x.isMetaMask) ?? injected;
   if (!eth) throw new Error("No browser wallet found. Install MetaMask, or paste your address instead.");
+  return eth;
+}
+
+// Make sure the wallet is on Kite's test network, adding it to MetaMask if needed
+async function switchToKite(eth: Eip1193) {
+  const id = "0x940"; // 2368
+  if ((await eth.request({ method: "eth_chainId" })) === id) return;
+  try {
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: id }] });
+  } catch (e) {
+    const code = (e as { code?: number }).code;
+    if (code === 4001) throw new Error("Switch MetaMask to KiteAI Testnet to top up.");
+    await eth.request({ method: "wallet_addEthereumChain", params: [{
+      chainId: id, chainName: "KiteAI Testnet", nativeCurrency: { name: "KITE", symbol: "KITE", decimals: 18 },
+      rpcUrls: ["https://rpc-testnet.gokite.ai/"], blockExplorerUrls: ["https://testnet.kitescan.ai"],
+    }] });
+  }
+}
+
+async function browserWalletAddress(): Promise<string> {
+  const eth = browserWallet();
   try {
     const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
     if (!accounts?.[0]) throw new Error("No account was shared.");
