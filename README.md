@@ -4,8 +4,6 @@
 
 Reins is an AI agent that learns your spending habits, pays for the ones you switch on within hard limits you set, and gets careful on its own when money runs low. It uses **SERV Reasoning** for judgment and pays real merchants over **x402 on Kite**.
 
-**Live demo:** [reins-zeta.vercel.app](https://reins-zeta.vercel.app). Click *Try the sample statement* to start.
-
 Built for the OpenServ SERV Hackathon, Edition 02 (Kite track).
 
 ## What it does
