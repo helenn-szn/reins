@@ -51,7 +51,7 @@ SERV is also used to review detected habits (names, bill vs lifestyle, "forgotte
 
 - [ ] Wire `KitePaymentProvider` to Kite Passport (x402 demo shops via `kite-x402-hono`)
 - [ ] Demo shops: coffee, rides, food
-- [ ] Logo (orange horse with reins) and polish
+- [x] Logo (orange horse with reins) and simple dashboard
 - [ ] Deploy to Vercel, record the 90-second demo
 
 ## Honest limits
