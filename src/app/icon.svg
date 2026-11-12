@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <defs><clipPath id="c"><rect width="100" height="100" rx="23"/></clipPath></defs>
-  <rect width="100" height="100" rx="23" fill="#13392B"/>
+  <rect width="100" height="100" rx="23" fill="#141414"/>
   <g clip-path="url(#c)">
     <path d="M51 11 C52 8 53 6 55 4 C56 9 56 13 55 18 L52 17 Z" fill="#C9530F"/>
     <path d="M53 17 C59 15 65 17 69 21 C66 22 66 24 69 26 C74 29 77 34 79 39 C76 39 76 41 78 44 C81 49 83 55 84 62 L80 46 C76 32 66 22 53 18 Z" fill="#C9530F"/>

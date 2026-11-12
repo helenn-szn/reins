@@ -188,7 +188,7 @@ export default function ReinsApp() {
 
   if (!s.habits.length) {
     return (
-      <div className="min-h-screen bg-paddock text-white">
+      <div className="min-h-screen bg-night text-white">
         <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-5 py-10">
           {error && <ErrorBox error={error} onClose={() => setError(null)} />}
           <Upload busy={busy} onCsv={(csv) => run("Reading your statement…", () => loadStatement(csv))} />
@@ -239,7 +239,7 @@ export default function ReinsApp() {
   return (
     <div className="min-h-screen lg:flex">
       {/* Sidebar (desktop) */}
-      <aside className="hidden bg-paddock text-white/75 lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col lg:px-4 lg:py-6">
+      <aside className="hidden bg-night text-white/75 lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col lg:px-4 lg:py-6">
         <div className="flex items-center gap-2 px-2">
           <Logo size={40} tile={false} />
           <span className="font-display text-2xl text-white">Reins</span>
@@ -247,8 +247,8 @@ export default function ReinsApp() {
         <nav className="mt-10 space-y-1">
           {nav.map((n) => (
             <button key={n.id} onClick={() => go(n.id)}
-              className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition ${page === n.id ? "bg-paddock-2 text-white" : "hover:bg-white/5 hover:text-white"}`}>
-              {page === n.id && <span className="absolute inset-y-2 left-0 w-1 rounded-r bg-brass" />}
+              className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition ${page === n.id ? "bg-night-2 text-white" : "hover:bg-white/5 hover:text-white"}`}>
+              {page === n.id && <span className="absolute inset-y-2 left-0 w-1 rounded-r bg-accent" />}
               <Icon name={n.icon} />
               <span className="flex-1 text-left">{n.label}</span>
               {n.badge !== undefined && (
@@ -258,9 +258,9 @@ export default function ReinsApp() {
           ))}
         </nav>
         <div className="mt-auto space-y-3">
-          <div className="rounded-xl bg-paddock-2 px-3 py-3 text-sm">
+          <div className="rounded-xl bg-night-2 px-3 py-3 text-sm">
             <p className="flex items-center gap-2 text-white">
-              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-safe-600 ring-2 ring-white/40" : "bg-emerald-400"}`} />
+              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-brand-500 ring-2 ring-white/40" : "bg-white"}`} />
               {safe?.active ? "Safe Mode is on" : "Reins is riding"}
             </p>
             <p className="mt-1 text-xs text-white/55">{modeLabel}</p>
@@ -270,7 +270,7 @@ export default function ReinsApp() {
       </aside>
 
       {/* Top bar + tabs (phone) */}
-      <div className="sticky top-0 z-10 bg-paddock px-4 pt-4 text-white lg:hidden">
+      <div className="sticky top-0 z-10 bg-night px-4 pt-4 text-white lg:hidden">
         <div className="flex items-center gap-2"><Logo size={32} tile={false} /><span className="font-display text-xl">Reins</span></div>
         <nav className="-mx-1 mt-3 flex gap-1 overflow-x-auto pb-3">
           {nav.map((n) => (
@@ -327,7 +327,7 @@ export default function ReinsApp() {
               )}
 
               {ready.map((h) => (
-                <div key={h.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-brass/50 bg-white px-5 py-4">
+                <div key={h.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-brand-500/40 bg-white px-5 py-4">
                   <CategoryIcon category={h.category} />
                   <p className="flex-1 text-sm">You approved <b>{h.name}</b> {h.approvalsInARow} times in a row. Let Reins handle it from now on?</p>
                   <div className="flex gap-2">
@@ -379,7 +379,7 @@ export default function ReinsApp() {
                               <span className="text-ink/60">{usd(spent)} of ${cap}</span>
                             </div>
                             <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10">
-                              <div className="rein-fill h-full rounded-full bg-paddock-3" style={{ width: `${Math.min(100, (spent / cap) * 100)}%` }} />
+                              <div className="rein-fill h-full rounded-full bg-[#141414]" style={{ width: `${Math.min(100, (spent / cap) * 100)}%` }} />
                             </div>
                             <p className="mt-1 text-xs text-ink/55">
                               {h.autopilot || s.mode === "full_autopilot" ? "Paid automatically" : s.mode === "trust_ladder" ? <Ladder steps={h.approvalsInARow} /> : "Asks every time"}
@@ -396,7 +396,7 @@ export default function ReinsApp() {
                 </Panel>
               </div>
 
-              <div className="rounded-2xl bg-paddock p-3 lg:hidden">{demo}</div>
+              <div className="rounded-2xl bg-night p-3 lg:hidden">{demo}</div>
             </div>
           )}
 
@@ -511,38 +511,39 @@ function ReinMeter({ wallet, needed, upcomingTotal, floor, pot, active, onTopUp 
   const fill = Math.min(100, (wallet / max) * 100);
   const buckle = Math.min(100, (needed / max) * 100);
   const slack = wallet - needed;
+  const muted = active ? "text-black/70" : "text-white/65";
   const mood = active ? "Safe Mode is on" : slack < needed * 0.5 ? "Getting tight" : "Plenty of slack";
   return (
-    <section className={`overflow-hidden rounded-3xl p-6 text-white sm:p-8 ${active ? "bg-safe-700" : "bg-paddock"}`}>
+    <section className={`overflow-hidden rounded-3xl p-6 sm:p-8 ${active ? "bg-brand-500 text-black" : "bg-night text-white"}`}>
       <div className="flex flex-wrap items-start justify-between gap-6">
         <div>
-          <p className="text-sm text-white/65">Your wallet</p>
+          <p className={`text-sm ${muted}`}>Your wallet</p>
           <p className="font-display text-5xl leading-tight sm:text-6xl">{usd(wallet)}</p>
-          <p className="mt-1 text-sm text-white/75">
+          <p className={`mt-1 text-sm ${active ? "text-black/80" : "text-white/75"}`}>
             {active ? `${usd(-slack)} short of what the next 2 weeks need.` : `${usd(slack)} of slack before Safe Mode.`}
           </p>
         </div>
-        <div className="rounded-2xl bg-white/10 px-4 py-3">
-          <p className="text-xs text-white/65">Spending pot (Kite Passport)</p>
+        <div className={`rounded-2xl px-4 py-3 ${active ? "bg-black/10" : "bg-white/10"}`}>
+          <p className={`text-xs ${muted}`}>Spending pot (Kite Passport)</p>
           <p className="font-display text-2xl">{usd(pot)}</p>
-          <button className="mt-1 text-sm font-semibold text-brass underline-offset-2 hover:underline" onClick={onTopUp}>Top up $40</button>
+          <button className={`mt-1 text-sm font-semibold underline-offset-2 hover:underline ${active ? "text-black underline" : "text-accent"}`} onClick={onTopUp}>Top up $40</button>
         </div>
       </div>
 
       <div className="mt-8">
         <div className="mb-2 flex justify-between text-sm">
           <span className="font-semibold">{mood}</span>
-          <span className="text-white/65">Safe Mode below {usd(needed)}</span>
+          <span className={muted}>Safe Mode below {usd(needed)}</span>
         </div>
         <div className="relative h-7" role="img" aria-label={`Wallet ${usd(wallet)}; Safe Mode starts below ${usd(needed)}`}>
-          <div className="absolute inset-0 rounded-full bg-black/25" />
-          <div className={`rein-fill absolute inset-y-0 left-0 rounded-full ${active ? "bg-white/70" : "bg-brand-500"}`} style={{ width: `${fill}%` }} />
-          <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/35" />
-          <div className="absolute -inset-y-1.5 w-4 -translate-x-1/2 rounded-sm border-[3px] border-brass bg-transparent" style={{ left: `${buckle}%` }}>
-            <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 bg-brass" />
+          <div className={`absolute inset-0 rounded-full ${active ? "bg-black/15" : "bg-white/15"}`} />
+          <div className={`rein-fill absolute inset-y-0 left-0 rounded-full ${active ? "bg-black" : "bg-brand-500"}`} style={{ width: `${fill}%` }} />
+          <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/40" />
+          <div className="absolute -inset-y-1.5 w-4 -translate-x-1/2 rounded-sm border-[3px] border-white bg-transparent" style={{ left: `${buckle}%` }}>
+            <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 bg-white" />
           </div>
         </div>
-        <p className="mt-3 text-xs text-white/60">Bills due in the next 2 weeks {usd(upcomingTotal)}, plus your {usd(floor)} safety floor.</p>
+        <p className={`mt-3 text-xs ${muted}`}>Bills due in the next 2 weeks {usd(upcomingTotal)}, plus your {usd(floor)} safety floor.</p>
       </div>
     </section>
   );
@@ -558,7 +559,7 @@ function UsualWeek({ values, today }: { values?: number[]; today: string }) {
       {values.map((v, i) => (
         <div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
           <span className={`text-[11px] ${i === todayIdx ? "font-semibold text-brand-700" : "text-ink/50"}`}>${Math.round(v)}</span>
-          <div className={`w-full rounded-t-md ${i === todayIdx ? "bg-brand-500" : "bg-paddock-3/25"}`} style={{ height: `${Math.max(4, (v / max) * 100)}%` }} />
+          <div className={`w-full rounded-t-md ${i === todayIdx ? "bg-brand-500" : "bg-[#dcdcdc]"}`} style={{ height: `${Math.max(4, (v / max) * 100)}%` }} />
           <span className={`text-xs ${i === todayIdx ? "font-semibold text-ink" : "text-ink/55"}`}>{days[i].slice(0, 1)}</span>
         </div>
       ))}
@@ -569,14 +570,14 @@ function UsualWeek({ values, today }: { values?: number[]; today: string }) {
 function Ladder({ steps }: { steps: number }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      {[0, 1, 2].map((i) => <span key={i} className={`h-2 w-2 rounded-full ${i < steps ? "bg-brass" : "bg-ink/15"}`} />)}
+      {[0, 1, 2].map((i) => <span key={i} className={`h-2 w-2 rounded-full ${i < steps ? "bg-brand-500" : "bg-ink/15"}`} />)}
       <span>{steps} of 3 approvals to earn autopilot</span>
     </span>
   );
 }
 
 function PlanTag({ plan }: { plan: "auto" | "asks" | "paused" }) {
-  const t = { auto: ["Auto", "bg-paddock-3/15 text-paddock"], asks: ["Asks you", "bg-brand-50 text-brand-700"], paused: ["Paused", "bg-safe-50 text-safe-700"] }[plan];
+  const t = { auto: ["Auto", "bg-[#f0f0f0] text-[#141414]"], asks: ["Asks you", "bg-brand-50 text-brand-700"], paused: ["Paused", "bg-black text-white"] }[plan];
   return <span className={`w-20 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-medium ${t[1]}`}>{t[0]}</span>;
 }
 
@@ -600,15 +601,15 @@ function EmptyNote({ text, action, onClick }: { text: string; action: string; on
 }
 
 const CATEGORY_ICONS: Record<string, { d: string; bg: string }> = {
-  coffee: { d: "M5 9h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 4v2M12.5 4v2", bg: "bg-[#f6e3d3] text-[#8a4b1f]" },
-  nightlife: { d: "M6 4h12l-6 8zM12 12v7M8.5 20h7", bg: "bg-[#e8e1f5] text-[#5a3c9a]" },
-  rides: { d: "M5 16v-4l2-5h10l2 5v4M4 16h16M7.5 19v-3M16.5 19v-3M8 12.5h.01M16 12.5h.01", bg: "bg-[#dfe9f2] text-[#2f5a80]" },
-  food: { d: "M3.5 11h17a8.5 8.5 0 0 1-17 0zM9 7.5c0-1 .8-2 1.8-2M13.5 7.5c0-1 .8-2 1.8-2", bg: "bg-[#fbe3d8] text-[#b0461c]" },
-  groceries: { d: "M5 9h14l-1.2 11H6.2zM9 9V7a3 3 0 0 1 6 0v2", bg: "bg-[#dcecdf] text-[#2c6150]" },
-  subscriptions: { d: "M20 12a8 8 0 1 1-2.4-5.7M20 4.5V9h-4.5M10.5 9.5v5l4-2.5z", bg: "bg-[#f3e9cf] text-[#8a6a1f]" },
-  phone: { d: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2", bg: "bg-[#e3e8ea] text-[#3e5059]" },
-  rent: { d: "M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5h4v5", bg: "bg-[#ece4dc] text-[#6b4a35]" },
-  other: { d: "M4 12V4h8l8 8-8 8zM8 8h.01", bg: "bg-[#e9ebe6] text-[#4b564f]" },
+  coffee: { d: "M5 9h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 4v2M12.5 4v2", bg: "bg-[#f0f0f0] text-[#141414]" },
+  nightlife: { d: "M6 4h12l-6 8zM12 12v7M8.5 20h7", bg: "bg-[#f0f0f0] text-[#141414]" },
+  rides: { d: "M5 16v-4l2-5h10l2 5v4M4 16h16M7.5 19v-3M16.5 19v-3M8 12.5h.01M16 12.5h.01", bg: "bg-[#f0f0f0] text-[#141414]" },
+  food: { d: "M3.5 11h17a8.5 8.5 0 0 1-17 0zM9 7.5c0-1 .8-2 1.8-2M13.5 7.5c0-1 .8-2 1.8-2", bg: "bg-[#f0f0f0] text-[#141414]" },
+  groceries: { d: "M5 9h14l-1.2 11H6.2zM9 9V7a3 3 0 0 1 6 0v2", bg: "bg-[#f0f0f0] text-[#141414]" },
+  subscriptions: { d: "M20 12a8 8 0 1 1-2.4-5.7M20 4.5V9h-4.5M10.5 9.5v5l4-2.5z", bg: "bg-[#f0f0f0] text-[#141414]" },
+  phone: { d: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2", bg: "bg-[#f0f0f0] text-[#141414]" },
+  rent: { d: "M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5h4v5", bg: "bg-[#f0f0f0] text-[#141414]" },
+  other: { d: "M4 12V4h8l8 8-8 8zM8 8h.01", bg: "bg-[#f0f0f0] text-[#141414]" },
 };
 
 function CategoryIcon({ category }: { category: string }) {
@@ -665,7 +666,7 @@ function Logo({ size = 36, tile = true }: { size?: number; tile?: boolean }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
       <defs><clipPath id="reins-logo-clip"><rect width="100" height="100" rx="23" /></clipPath></defs>
-      {tile && <rect width="100" height="100" rx="23" fill="#13392B" />}
+      {tile && <rect width="100" height="100" rx="23" fill="#141414" />}
       <g clipPath="url(#reins-logo-clip)">
         <path d="M51 11 C52 8 53 6 55 4 C56 9 56 13 55 18 L52 17 Z" fill="#C9530F" />
         <path d="M53 17 C59 15 65 17 69 21 C66 22 66 24 69 26 C74 29 77 34 79 39 C76 39 76 41 78 44 C81 49 83 55 84 62 L80 46 C76 32 66 22 53 18 Z" fill="#C9530F" />
@@ -692,7 +693,7 @@ function Upload({ onCsv, busy }: { onCsv: (csv: string) => void; busy: string | 
           Upload statement (CSV)
           <input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (e) => { const f = e.target.files?.[0]; if (f) onCsv(await f.text()); }} />
         </label>
-        <button className="text-sm text-brass underline underline-offset-4" disabled={!!busy}
+        <button className="text-sm text-accent underline underline-offset-4" disabled={!!busy}
           onClick={async () => onCsv(await (await fetch("/sample_bank_statement.csv")).text())}>
           Try it with a sample statement
         </button>
@@ -735,7 +736,7 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
 }
 
 function Chip({ children, tone }: { children: React.ReactNode; tone: "good" | "muted" | "warn" | "bad" }) {
-  const t = { good: "bg-paddock-3/15 text-paddock", muted: "bg-ink/5 text-ink/60", warn: "bg-brand-50 text-brand-700", bad: "bg-red-50 text-red-700" }[tone];
+  const t = { good: "bg-[#f0f0f0] text-[#141414]", muted: "bg-ink/5 text-ink/60", warn: "bg-brand-50 text-brand-700", bad: "bg-red-50 text-red-700" }[tone];
   return <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${t}`}>{children}</span>;
 }
 
