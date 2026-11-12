@@ -53,6 +53,7 @@ export default function ReinsApp() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
+  const [active, setActive] = useState("dashboard");
 
   // Always work from the latest state, even inside long async loops
   const update = (fn: (prev: AppState) => AppState) => {
@@ -172,9 +173,59 @@ export default function ReinsApp() {
   const ready = s.habits.filter((h) => h.enabled && !h.autopilot && h.approvalsInARow >= TRUST_LADDER_STEPS && s.mode === "trust_ladder");
 
   // ---------------- UI ----------------
+  const hasData = s.habits.length > 0;
+  const nav: { id: string; label: string; icon: IconName; badge?: number }[] = [
+    { id: "dashboard", label: "Dashboard", icon: "home" },
+    { id: "approvals", label: "Approvals", icon: "check", badge: waiting.length || undefined },
+    { id: "habits", label: "Habits", icon: "habits", badge: s.habits.filter((h) => h.enabled).length || undefined },
+    { id: "activity", label: "Activity", icon: "activity" },
+    { id: "settings", label: "Settings", icon: "settings" },
+  ];
+  const jump = (id: string) => {
+    setActive(id);
+    if (id === "dashboard") window.scrollTo({ top: 0, behavior: "smooth" });
+    else document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div className="min-h-screen lg:flex">
+      {hasData && (
+        <aside className="hidden bg-stone-900 text-stone-300 lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col lg:px-4 lg:py-6">
+          <div className="flex items-center gap-3 px-2">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand-500 font-bold text-white">R</div>
+            <span className="text-lg font-semibold text-white">Reins</span>
+          </div>
+          <nav className="mt-8 space-y-1">
+            {nav.map((n) => (
+              <button key={n.id} onClick={() => jump(n.id)}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${active === n.id ? "bg-white/10 text-white" : "hover:bg-white/5 hover:text-white"}`}>
+                <Icon name={n.icon} />
+                <span className="flex-1 text-left">{n.label}</span>
+                {n.badge !== undefined && (
+                  <span className={`rounded-full px-2 text-xs ${n.id === "approvals" ? "bg-brand-500 text-white" : "bg-white/10"}`}>{n.badge}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+          <div className="mt-auto space-y-3 text-xs">
+            <div className={`rounded-xl px-3 py-2.5 ${safe?.active ? "bg-safe-600 text-white" : "bg-white/5"}`}>
+              <p className="flex items-center gap-2 font-medium text-white">
+                <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-white" : "bg-emerald-400"}`} />
+                {safe?.active ? "Safe Mode is on" : "All good"}
+              </p>
+              <p className={`mt-0.5 ${safe?.active ? "text-white/80" : "text-stone-500"}`}>{MODES.find((m) => m.id === s.mode)?.label}</p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 px-1">
+              <span className="rounded-full bg-white/10 px-2 py-0.5">SERV: {status?.serv.mode === "live" ? "live" : "mock"}</span>
+              <span className="rounded-full bg-white/10 px-2 py-0.5">Payments: {status?.payments ?? "…"}</span>
+            </div>
+            <button className="px-1 text-stone-500 hover:text-white" onClick={() => { if (confirm("Start over?")) update(() => INITIAL); }}>Start over</button>
+          </div>
+        </aside>
+      )}
+
+    <div className={`mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 ${hasData ? "lg:ml-60 lg:px-8" : ""}`}>
+      <header className={`mb-6 flex flex-wrap items-center justify-between gap-4 ${hasData ? "lg:hidden" : ""}`}>
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500 text-lg font-bold text-white">R</div>
           <div>
@@ -185,11 +236,17 @@ export default function ReinsApp() {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Chip tone={status?.serv.mode === "live" ? "good" : "muted"}>SERV: {status?.serv.mode === "live" ? `live (${status.serv.model})` : "mock"}</Chip>
           <Chip tone={status?.payments === "kite" ? "good" : "muted"}>Payments: {status?.payments ?? "…"}</Chip>
-          {s.habits.length > 0 && (
+          {hasData && (
             <button className="rounded-lg px-2 py-1 text-stone-500 hover:bg-stone-200" onClick={() => { if (confirm("Start over?")) update(() => INITIAL); }}>Reset</button>
           )}
         </div>
       </header>
+      {hasData && (
+        <div className="mb-6 hidden lg:block">
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-stone-500">Spend on autopilot. Keep the reins.</p>
+        </div>
+      )}
 
       {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
@@ -210,7 +267,7 @@ export default function ReinsApp() {
           <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
             {/* Left column */}
             <div className="space-y-4">
-              <Card title="Control mode">
+              <Card id="settings" title="Control mode">
                 <div className="space-y-2">
                   {MODES.map((m) => (
                     <label key={m.id} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${s.mode === m.id ? "border-brand-500 bg-brand-50" : "border-stone-200"}`}>
@@ -279,7 +336,7 @@ export default function ReinsApp() {
               </Card>
 
               {waiting.length > 0 && (
-                <Card title={`Needs your approval (${waiting.length})`}>
+                <Card id="approvals" title={`Needs your approval (${waiting.length})`}>
                   <ul className="divide-y divide-stone-100">
                     {waiting.map((l) => (
                       <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
@@ -308,7 +365,7 @@ export default function ReinsApp() {
                 </div>
               ))}
 
-              <Card title="Habit switchboard" right={s.statement && <span className="text-xs text-stone-500">{s.statement.transactions} transactions · {s.statement.from} to {s.statement.to} · reviewed by {s.statement.reviewedBy === "serv" ? "SERV" : "rules"}</span>}>
+              <Card id="habits" title="Habit switchboard" right={s.statement && <span className="text-xs text-stone-500">{s.statement.transactions} transactions · {s.statement.from} to {s.statement.to} · reviewed by {s.statement.reviewedBy === "serv" ? "SERV" : "rules"}</span>}>
                 <ul className="divide-y divide-stone-100">
                   {s.habits.map((h) => (
                     <li key={h.id} className="flex flex-wrap items-center gap-3 py-3">
@@ -336,7 +393,7 @@ export default function ReinsApp() {
                 </ul>
               </Card>
 
-              <Card title="Activity">
+              <Card id="activity" title="Activity">
                 {!s.log.length ? (
                   <p className="text-sm text-stone-500">Switch on a habit, then fast-forward a day or ask Reins to pay for something.</p>
                 ) : (
@@ -361,6 +418,7 @@ export default function ReinsApp() {
           </div>
         </>
       )}
+    </div>
     </div>
   );
 }
@@ -387,9 +445,9 @@ function Upload({ onCsv, busy }: { onCsv: (csv: string) => void; busy: string | 
   );
 }
 
-function Card({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+function Card({ id, title, right, children }: { id?: string; title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <section id={id} className="scroll-mt-6 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-semibold">{title}</h2>
         {right}
@@ -430,5 +488,22 @@ function Stat({ label, value }: { label: string; value: string }) {
       <span className="text-sm text-stone-500">{label}</span>
       <span className="text-lg font-semibold">{value}</span>
     </div>
+  );
+}
+
+type IconName = "home" | "check" | "habits" | "activity" | "settings";
+
+function Icon({ name }: { name: IconName }) {
+  const d = {
+    home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
+    check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+    habits: "M4 7h10M4 12h16M4 17h7M17 4.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM14 14.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z",
+    activity: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+    settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
+  }[name];
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
   );
 }
