@@ -33,6 +33,11 @@ export function shopFor(category?: string, text = ""): ShopId {
 // Where the shops receive money. A demo merchant wallet; override with SHOP_PAY_TO.
 export const SHOP_PAY_TO = (process.env.SHOP_PAY_TO || "0x9B759784ca63D8b1013a55358E4D1dea9f8ec97d") as Address;
 export const NETWORK = "kite-testnet";
+
+// Test money is scarce (the faucet gives a couple of USDT), so on testnet each dollar of a
+// purchase moves 1/100 of a token by default. Set KITE_PAY_SCALE=1 to pay full price.
+export const PAY_SCALE = Number(process.env.KITE_PAY_SCALE || "0.01");
+export const onchainAmount = (usd: number) => Math.round(usd * PAY_SCALE * 1e6) / 1e6;
 export const EXPLORER = "https://testnet.kitescan.ai";
 
 const client = createPublicClient({ chain: kiteTestnet, transport: http() });
@@ -56,7 +61,7 @@ export type PaymentTerms = {
     payTo: Address;
     maxTimeoutSeconds: number;
     asset: Address;
-    extra: { amountUsd: number; item: string; settlement: "onchain-transfer" };
+    extra: { amountUsd: number; payScale: number; item: string; settlement: "onchain-transfer" };
   }[];
 };
 
@@ -68,7 +73,7 @@ export async function paymentTerms(shop: ShopId, item: string, amountUsd: number
     accepts: [{
       scheme: "exact",
       network: NETWORK,
-      maxAmountRequired: parseUnits(amountUsd.toFixed(2), decimals).toString(),
+      maxAmountRequired: parseUnits(onchainAmount(amountUsd).toFixed(6), decimals).toString(),
       resource,
       description: `${item} from ${SHOPS[shop].name}`,
       merchantName: SHOPS[shop].name,
@@ -76,7 +81,7 @@ export async function paymentTerms(shop: ShopId, item: string, amountUsd: number
       payTo: SHOP_PAY_TO,
       maxTimeoutSeconds: 300,
       asset: WALLET_TOKEN,
-      extra: { amountUsd, item, settlement: "onchain-transfer" },
+      extra: { amountUsd, payScale: PAY_SCALE, item, settlement: "onchain-transfer" },
     }],
   };
 }

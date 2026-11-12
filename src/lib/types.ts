@@ -68,6 +68,7 @@ export type Payment = {
   shop?: string; // the demo shop that was paid (kite mode)
   explorerUrl?: string; // the payment on KiteScan
   orderId?: string;
+  onchain?: string; // what actually moved on Kite, e.g. "0.0413 USDT"
 };
 
 export type LogEntry = {

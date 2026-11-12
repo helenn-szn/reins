@@ -52,7 +52,7 @@ export default function ReinsApp() {
   const ref = useRef<AppState>(INITIAL);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null } | null>(null);
+  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; payScale?: number } | null>(null);
   const [agentWallet, setAgentWallet] = useState<{ balance: number; symbol: string; gas: number } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
 
@@ -442,6 +442,7 @@ export default function ReinsApp() {
                     Payments are live on Kite testnet from the Reins agent wallet{" "}
                     <a className="underline" href={`https://testnet.kitescan.ai/address/${status.agent}`} target="_blank" rel="noreferrer">{shortAddr(status.agent)}</a>
                     {agentWallet ? ` (${agentWallet.balance.toFixed(2)} ${agentWallet.symbol} left)` : ""}.
+                    {status.payScale && status.payScale !== 1 ? ` Test payments are 1/${Math.round(1 / status.payScale)} of the price.` : ""}
                   </p>
                 )}
               </Card>
@@ -526,7 +527,7 @@ export default function ReinsApp() {
                     </div>
                     <p className="text-xs text-stone-500">{l.request.description ? `“${l.request.description}” · ` : ""}{l.decision.reason}</p>
                     {l.payment?.explorerUrl ? (
-                      <p className="mt-0.5 text-[11px] text-stone-500">Paid {l.payment.shop} on Kite ·{" "}
+                      <p className="mt-0.5 text-[11px] text-stone-500">Paid {l.payment.shop} {l.payment.onchain} on Kite ·{" "}
                         <a className="font-mono underline" href={l.payment.explorerUrl} target="_blank" rel="noreferrer">{l.payment.txHash?.slice(0, 12)}…</a></p>
                     ) : l.payment?.txHash && <p className="mt-0.5 font-mono text-[11px] text-stone-400">demo payment {l.payment.txHash.slice(0, 12)}…</p>}
                   </li>

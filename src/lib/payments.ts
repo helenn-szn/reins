@@ -2,7 +2,7 @@ import { createWalletClient, createPublicClient, erc20Abi, http, formatUnits, ty
 import { privateKeyToAccount } from "viem/accounts";
 import type { Payment } from "./types";
 import { kiteTestnet, WALLET_TOKEN } from "./wallet";
-import { encodePayment, EXPLORER, SHOPS, shopFor, type PaymentTerms } from "./shops";
+import { encodePayment, EXPLORER, onchainAmount, SHOPS, shopFor, type PaymentTerms } from "./shops";
 
 // Payments go through one interface so the app works the same with fake payments
 // and real payments on Kite. Switch with PAYMENTS_MODE=mock|kite.
@@ -60,10 +60,13 @@ export class KitePaymentProvider implements PaymentProvider {
     const decimals = await pub.readContract({ address: WALLET_TOKEN, abi: erc20Abi, functionName: "decimals" });
     const price = BigInt(offer.maxAmountRequired);
     if (offer.asset.toLowerCase() !== WALLET_TOKEN.toLowerCase()) throw new Error("Shop asked for a different token.");
-    if (Number(formatUnits(price, decimals)) > input.amount + 0.001) throw new Error(`Shop asked for more than the approved $${input.amount.toFixed(2)}.`);
+    if (Number(formatUnits(price, decimals)) > onchainAmount(input.amount) + 1e-6) throw new Error(`Shop asked for more than the approved $${input.amount.toFixed(2)}.`);
 
-    const balance = await pub.readContract({ address: WALLET_TOKEN, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
-    if (balance < price) throw new Error(`The Reins agent wallet has ${formatUnits(balance, decimals)} test USD, not enough for this.`);
+    const [balance, symbol] = await Promise.all([
+      pub.readContract({ address: WALLET_TOKEN, abi: erc20Abi, functionName: "balanceOf", args: [account.address] }),
+      pub.readContract({ address: WALLET_TOKEN, abi: erc20Abi, functionName: "symbol" }),
+    ]);
+    if (balance < price) throw new Error(`The Reins agent wallet has ${formatUnits(balance, decimals)} ${symbol}, not enough for this. Top it up from the Kite faucet.`);
 
     // 3. Pay on Kite
     const wallet = createWalletClient({ account, chain: kiteTestnet, transport: http() });
@@ -87,6 +90,7 @@ export class KitePaymentProvider implements PaymentProvider {
       shop: SHOPS[shop].name,
       orderId: body.order?.id,
       explorerUrl: `${EXPLORER}/tx/${txHash}`,
+      onchain: `${formatUnits(price, decimals)} ${symbol}`,
     };
   }
 }
