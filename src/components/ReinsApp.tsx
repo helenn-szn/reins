@@ -369,17 +369,30 @@ export default function ReinsApp() {
               </Card>
             </div>
 
-            {/* Habit switchboard, just the essentials */}
-            <Card title="Habit switchboard" right={<span className="text-xs text-stone-500">Switch on what Reins may pay for</span>}>
-              <ul className="grid gap-x-8 sm:grid-cols-2">
+            {/* Habit switchboard */}
+            <Card title="Habit switchboard" right={s.statement && <span className="text-xs text-stone-500">{s.statement.transactions} transactions · {s.statement.from} to {s.statement.to} · reviewed by {s.statement.reviewedBy === "serv" ? "SERV" : "rules"}</span>}>
+              <ul className="divide-y divide-stone-100">
                 {s.habits.map((h) => (
-                  <li key={h.id} className="flex items-center gap-3 border-b border-stone-100 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{h.name}</p>
-                      <p className="text-xs text-stone-500">{usd(h.avgAmount)}, {describeCadence(h.cadence)}</p>
-                    </div>
-                    {h.enabled && h.autopilot && <Chip tone="good">auto</Chip>}
+                  <li key={h.id} className="flex flex-wrap items-center gap-3 py-3">
                     <Toggle on={h.enabled} onClick={() => toggleHabit(h)} label={`Switch ${h.name}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">
+                        {h.name} <span className="font-normal text-stone-500">· ~{usd(h.avgAmount)} {describeCadence(h.cadence)}</span>
+                      </p>
+                      <p className="text-xs text-stone-500">
+                        {h.kind} · seen {h.count}× · {h.merchants.join(", ")}
+                        {h.note && <span className="text-brand-700"> · {h.note}</span>}
+                      </p>
+                    </div>
+                    {h.enabled && (
+                      <div className="flex items-center gap-2 text-xs">
+                        {h.autopilot ? <Chip tone="good">autopilot</Chip> : s.mode === "trust_ladder" && <Chip tone="muted">{h.approvalsInARow}/{TRUST_LADDER_STEPS}</Chip>}
+                        <span className="text-stone-500">limit $</span>
+                        <input type="number" className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right" value={h.capPerPurchase}
+                          onChange={(e) => setHabit(h.id, { capPerPurchase: Number(e.target.value) || 0 })} />
+                        <span className="hidden text-stone-400 sm:inline">({describeLimit(h)})</span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
