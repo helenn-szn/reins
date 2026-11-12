@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Decision, EngineState, Habit, LogEntry, Mode, Payment, PurchaseRequest } from "@/lib/types";
 import { describeCadence, describeLimit } from "@/lib/habits";
-import { isDue, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
+import { isDue, periodCap, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
 import { addDays, pretty } from "@/lib/dates";
 
 type WalletRead = { symbol: string; balance: number; native: number; explorer: string };
 
 type AppState = {
   habits: Habit[];
-  statement?: { transactions: number; from: string; to: string; reviewedBy: "serv" | "rules" };
+  statement?: { transactions: number; from: string; to: string; reviewedBy: "serv" | "rules"; usualWeek?: number[] };
   mode: Mode;
   today: string;
   walletAddress: string;
@@ -83,7 +83,7 @@ export default function ReinsApp() {
 
   // ---- Statement ----
   async function loadStatement(csv: string) {
-    const r = await post<{ habits: Habit[]; transactions: number; from: string; to: string; reviewedBy: "serv" | "rules" }>("/api/statement", { csv });
+    const r = await post<{ habits: Habit[]; transactions: number; from: string; to: string; reviewedBy: "serv" | "rules"; usualWeek: number[] }>("/api/statement", { csv });
     update((p) => ({ ...p, habits: r.habits, statement: r, today: addDays(r.to, 1), log: [], spent: {} }));
   }
 
@@ -184,33 +184,51 @@ export default function ReinsApp() {
     }
   }
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const categoryOf = (habitId?: string) => s.habits.find((h) => h.id === habitId)?.category ?? "other";
 
   if (!s.habits.length) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-10">
-        {error && <ErrorBox error={error} onClose={() => setError(null)} />}
-        <Upload busy={busy} onCsv={(csv) => run("Reading statement…", () => loadStatement(csv))} />
+      <div className="min-h-screen bg-paddock text-white">
+        <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-5 py-10">
+          {error && <ErrorBox error={error} onClose={() => setError(null)} />}
+          <Upload busy={busy} onCsv={(csv) => run("Reading your statement…", () => loadStatement(csv))} />
+        </div>
       </div>
     );
   }
 
+  // Next 7 days of switched-on habits, and what Reins will do with each
+  const upcoming: { date: string; habit: Habit; plan: "auto" | "asks" | "paused" }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(s.today, i);
+    for (const h of s.habits) {
+      if (!h.enabled || !isDue(h, date)) continue;
+      const plan = safe?.active ? (h.kind === "lifestyle" ? "paused" : "asks")
+        : s.mode === "full_autopilot" || (s.mode === "trust_ladder" && h.autopilot) ? "auto" : "asks";
+      upcoming.push({ date, habit: h, plan });
+    }
+  }
+  const enabled = s.habits.filter((h) => h.enabled);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
   const nav: { id: Page; label: string; icon: IconName; badge?: number }[] = [
     { id: "overview", label: "Overview", icon: "home", badge: waiting.length || undefined },
-    { id: "habits", label: "Habits", icon: "habits", badge: s.habits.filter((h) => h.enabled).length || undefined },
+    { id: "habits", label: "Habits", icon: "habits", badge: enabled.length || undefined },
     { id: "activity", label: "Activity", icon: "activity" },
     { id: "settings", label: "Settings", icon: "settings" },
   ];
 
   const demo = (
-    <details className="rounded-xl border border-white/10 px-3 py-2.5 text-sm">
-      <summary className="cursor-pointer text-stone-400">Demo · {pretty(s.today)}</summary>
+    <details className="rounded-xl border border-white/10 px-3 py-2.5 text-sm text-white/70">
+      <summary className="cursor-pointer">Demo clock: {pretty(s.today)}</summary>
       <div className="mt-3 space-y-3">
         <div className="flex gap-2">
           <Button className="flex-1" disabled={!!busy} onClick={() => run("Running the day…", () => runDays(1))}>+1 day</Button>
           <Button className="flex-1" variant="ghost" disabled={!!busy} onClick={() => run("Running the week…", () => runDays(7))}>+1 week</Button>
         </div>
-        <label className="block text-xs text-stone-400">
-          Demo wallet: {usd(s.demoBalance)}
+        <label className="block text-xs">
+          Demo wallet {usd(s.demoBalance)}
           <input type="range" min={0} max={300} step={5} value={s.demoBalance} className="mt-1 w-full accent-brand-500"
             onChange={(e) => update((p) => ({ ...p, useDemoBalance: true, demoBalance: Number(e.target.value) }))} />
         </label>
@@ -221,86 +239,81 @@ export default function ReinsApp() {
   return (
     <div className="min-h-screen lg:flex">
       {/* Sidebar (desktop) */}
-      <aside className="hidden bg-ink text-stone-300 lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col lg:px-4 lg:py-6">
-        <div className="flex items-center gap-2.5 px-2">
-          <Logo size={34} />
-          <span className="text-lg font-semibold tracking-tight text-white">Reins</span>
+      <aside className="hidden bg-paddock text-white/75 lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col lg:px-4 lg:py-6">
+        <div className="flex items-center gap-2 px-2">
+          <Logo size={40} tile={false} />
+          <span className="font-display text-2xl text-white">Reins</span>
         </div>
-        <nav className="mt-8 space-y-1">
+        <nav className="mt-10 space-y-1">
           {nav.map((n) => (
             <button key={n.id} onClick={() => go(n.id)}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${page === n.id ? "bg-white/10 text-white" : "hover:bg-white/5 hover:text-white"}`}>
+              className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition ${page === n.id ? "bg-paddock-2 text-white" : "hover:bg-white/5 hover:text-white"}`}>
+              {page === n.id && <span className="absolute inset-y-2 left-0 w-1 rounded-r bg-brass" />}
               <Icon name={n.icon} />
               <span className="flex-1 text-left">{n.label}</span>
               {n.badge !== undefined && (
-                <span className={`rounded-full px-2 text-xs ${n.id === "overview" ? "bg-brand-500 text-white" : "bg-white/10"}`}>{n.badge}</span>
+                <span className={`min-w-6 rounded-full px-1.5 text-center text-xs leading-5 ${n.id === "overview" ? "bg-brand-500 text-white" : "bg-white/10"}`}>{n.badge}</span>
               )}
             </button>
           ))}
         </nav>
         <div className="mt-auto space-y-3">
-          <div className="rounded-xl bg-white/5 px-3 py-2.5 text-xs">
-            <p className="flex items-center gap-2 text-stone-200">
-              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-safe-600" : "bg-emerald-500"}`} />
-              {safe?.active ? "Safe Mode on" : "All good"}
+          <div className="rounded-xl bg-paddock-2 px-3 py-3 text-sm">
+            <p className="flex items-center gap-2 text-white">
+              <span className={`h-2 w-2 rounded-full ${safe?.active ? "bg-safe-600 ring-2 ring-white/40" : "bg-emerald-400"}`} />
+              {safe?.active ? "Safe Mode is on" : "Reins is riding"}
             </p>
-            <p className="mt-1 text-stone-500">{modeLabel}</p>
+            <p className="mt-1 text-xs text-white/55">{modeLabel}</p>
           </div>
           {demo}
         </div>
       </aside>
 
       {/* Top bar + tabs (phone) */}
-      <div className="sticky top-0 z-10 border-b border-stone-200 bg-[#faf8f6]/95 px-4 pt-4 backdrop-blur lg:hidden">
-        <div className="flex items-center gap-2.5"><Logo size={30} /><span className="text-lg font-semibold">Reins</span></div>
-        <nav className="-mx-1 mt-3 flex gap-1 overflow-x-auto pb-2">
+      <div className="sticky top-0 z-10 bg-paddock px-4 pt-4 text-white lg:hidden">
+        <div className="flex items-center gap-2"><Logo size={32} tile={false} /><span className="font-display text-xl">Reins</span></div>
+        <nav className="-mx-1 mt-3 flex gap-1 overflow-x-auto pb-3">
           {nav.map((n) => (
             <button key={n.id} onClick={() => go(n.id)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${page === n.id ? "bg-ink text-white" : "text-stone-600"}`}>
-              {n.label}{n.badge !== undefined && n.id === "overview" ? ` · ${n.badge}` : ""}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm ${page === n.id ? "bg-brand-500 text-white" : "text-white/70"}`}>
+              {n.label}{n.id === "overview" && n.badge ? ` (${n.badge})` : ""}
             </button>
           ))}
         </nav>
       </div>
 
-      <main className="flex-1 lg:pl-64">
-        <div className="mx-auto max-w-3xl px-4 py-6 lg:px-10 lg:py-10">
-          <h1 className="mb-6 hidden text-2xl font-semibold tracking-tight lg:block">{nav.find((n) => n.id === page)?.label}</h1>
+      <main className="min-w-0 flex-1 lg:pl-64">
+        <div className="mx-auto max-w-5xl px-4 py-6 lg:px-10 lg:py-9">
           {error && <ErrorBox error={error} onClose={() => setError(null)} />}
-          {busy && <p className="mb-3 text-sm text-stone-500">{busy}</p>}
 
           {page === "overview" && (
-            <div className="space-y-4">
-              <section className={`rounded-2xl p-6 ${safe?.active ? "bg-safe-600 text-white" : "border border-stone-200 bg-white"}`}>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className={`text-sm ${safe?.active ? "text-white/80" : "text-stone-500"}`}>Wallet</p>
-                    <p className="text-3xl font-semibold tracking-tight">{usd(walletBalance(s))}</p>
-                  </div>
-                  <div>
-                    <p className={`text-sm ${safe?.active ? "text-white/80" : "text-stone-500"}`}>Spending pot</p>
-                    <p className="text-3xl font-semibold tracking-tight">{usd(s.potBalance)}</p>
-                  </div>
+            <div className="space-y-5">
+              <header className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className="text-sm text-ink/60">{pretty(s.today)}</p>
+                  <h1 className="font-display text-3xl sm:text-4xl">{greeting}.</h1>
                 </div>
-                <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm ${safe?.active ? "border-white/20" : "border-stone-100"}`}>
-                  {safe?.active ? (
-                    <p><b>Safe Mode is on.</b> Bills in the next 2 weeks plus your floor need {usd(safe.needed)}. Lifestyle habits are paused; everything else asks first.</p>
-                  ) : (
-                    <p className="flex items-center gap-2 text-stone-600"><span className="h-2 w-2 rounded-full bg-emerald-500" />All good · {modeLabel}</p>
-                  )}
-                  <Button variant={safe?.active ? "light" : "secondary"} onClick={() => topUp(40)}>Top up pot $40</Button>
-                </div>
-              </section>
+                <form className="flex w-full gap-2 sm:w-96" onSubmit={(e) => { e.preventDefault(); if (request.trim()) run("Asking Reins…", onDemand); }}>
+                  <input className="min-w-0 flex-1 rounded-full border border-ink/15 bg-white px-4 py-2.5 text-sm outline-none focus:border-brand-500"
+                    value={request} onChange={(e) => setRequest(e.target.value)} placeholder="Ask Reins to pay for something" aria-label="Ask Reins to pay for something" />
+                  <Button type="submit" className="rounded-full px-5" disabled={!!busy || !request.trim()}>Ask</Button>
+                </form>
+              </header>
+              {busy && <p className="text-sm text-ink/60">{busy}</p>}
+
+              {safe && <ReinMeter wallet={walletBalance(s)} needed={safe.needed} upcomingTotal={safe.upcoming.total} floor={s.safetyFloor}
+                pot={s.potBalance} active={safe.active} onTopUp={() => topUp(40)} />}
 
               {waiting.length > 0 && (
-                <Card title={`Needs your OK · ${waiting.length}`}
-                  right={approvable.length > 1 && <button className="text-sm font-medium text-brand-600 disabled:opacity-50" disabled={!!busy} onClick={() => run("Paying…", approveAll)}>Approve all</button>}>
-                  <ul className="divide-y divide-stone-100">
+                <Panel title={`Needs your OK (${waiting.length})`} tone="cognac"
+                  action={approvable.length > 1 && <button className="text-sm font-semibold text-brand-700 disabled:opacity-50" disabled={!!busy} onClick={() => run("Paying…", approveAll)}>Approve all</button>}>
+                  <ul className="divide-y divide-ink/10">
                     {waiting.slice(0, 3).map((l) => (
-                      <li key={l.id} className="flex items-center justify-between gap-3 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{l.request.merchant} · {usd(l.request.amount)}</p>
-                          <p className="text-xs text-stone-500">{l.request.amount > s.potBalance ? "Top up the pot first." : l.decision.reason}</p>
+                      <li key={l.id} className="flex items-center gap-3 py-3">
+                        <CategoryIcon category={categoryOf(l.request.habitId)} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{l.request.merchant}, {usd(l.request.amount)}</p>
+                          <p className="text-xs text-ink/60">{l.request.amount > s.potBalance ? "Top up the pot first." : l.decision.reason}</p>
                         </div>
                         <div className="flex shrink-0 gap-2">
                           <Button onClick={() => run("Paying…", () => approve(l))} disabled={!!busy || l.request.amount > s.potBalance}>Approve</Button>
@@ -309,115 +322,174 @@ export default function ReinsApp() {
                       </li>
                     ))}
                   </ul>
-                  {waiting.length > 3 && <p className="pt-1 text-xs text-stone-500">+{waiting.length - 3} more</p>}
-                </Card>
+                  {waiting.length > 3 && <p className="pt-1 text-xs text-ink/60">{waiting.length - 3} more waiting</p>}
+                </Panel>
               )}
 
               {ready.map((h) => (
-                <div key={h.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand-50 px-5 py-4">
-                  <p className="text-sm">You approved <b>{h.name}</b> {h.approvalsInARow} times in a row. Handle it automatically from now on?</p>
+                <div key={h.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-brass/50 bg-white px-5 py-4">
+                  <CategoryIcon category={h.category} />
+                  <p className="flex-1 text-sm">You approved <b>{h.name}</b> {h.approvalsInARow} times in a row. Let Reins handle it from now on?</p>
                   <div className="flex gap-2">
-                    <Button onClick={() => setHabit(h.id, { autopilot: true })}>Yes</Button>
+                    <Button onClick={() => setHabit(h.id, { autopilot: true })}>Hand it over</Button>
                     <Button variant="secondary" onClick={() => setHabit(h.id, { approvalsInARow: 0 })}>Not yet</Button>
                   </div>
                 </div>
               ))}
 
-              <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (request.trim()) run("Asking Reins…", onDemand); }}>
-                <input className="min-w-0 flex-1 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-brand-500"
-                  value={request} onChange={(e) => setRequest(e.target.value)} placeholder="Ask Reins to pay for something…" />
-                <Button type="submit" className="px-4" disabled={!!busy || !request.trim()}>Ask</Button>
-              </form>
+              <div className="grid gap-5 lg:grid-cols-5">
+                <Panel title="Coming up this week" className="lg:col-span-3">
+                  {!upcoming.length ? (
+                    <EmptyNote text="Nothing scheduled yet. Switch on a habit and it shows up here." action="Choose habits" onClick={() => go("habits")} />
+                  ) : (
+                    <ul className="divide-y divide-ink/10">
+                      {upcoming.slice(0, 6).map((u) => (
+                        <li key={`${u.habit.id}-${u.date}`} className="flex items-center gap-3 py-2.5">
+                          <DateBadge date={u.date} />
+                          <CategoryIcon category={u.habit.category} />
+                          <p className="min-w-0 flex-1 truncate text-sm">{u.habit.name}</p>
+                          <span className="text-sm font-medium">{usd(u.habit.avgAmount)}</span>
+                          <PlanTag plan={u.plan} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {upcoming.length > 6 && <p className="pt-1 text-xs text-ink/60">{upcoming.length - 6} more this week</p>}
+                </Panel>
 
-              <Card title="Recent activity" right={done.length > 5 && <button className="text-sm text-brand-600" onClick={() => go("activity")}>View all</button>}>
-                <ActivityList entries={done.slice(0, 5)} />
-              </Card>
+                <Panel title="Your usual week" className="lg:col-span-2">
+                  <UsualWeek values={s.statement?.usualWeek} today={s.today} />
+                  <p className="mt-2 text-xs text-ink/55">Average everyday spending by day, from your last 3 months.</p>
+                </Panel>
+              </div>
 
-              <div className="rounded-2xl bg-ink p-3 lg:hidden">{demo}</div>
+              <div className="grid gap-5 lg:grid-cols-5">
+                <Panel title="Limits this period" className="lg:col-span-2">
+                  {!enabled.length ? (
+                    <EmptyNote text="Each habit you switch on gets a hard limit. You'll see how close it is here." action="Choose habits" onClick={() => go("habits")} />
+                  ) : (
+                    <ul className="space-y-4 pt-1">
+                      {enabled.slice(0, 5).map((h) => {
+                        const spent = s.spent[`${h.id}:${periodKey(h, s.today)}`] ?? 0;
+                        const cap = periodCap(h);
+                        return (
+                          <li key={h.id}>
+                            <div className="flex items-baseline justify-between gap-2 text-sm">
+                              <span className="font-medium">{h.name}</span>
+                              <span className="text-ink/60">{usd(spent)} of ${cap}</span>
+                            </div>
+                            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10">
+                              <div className="rein-fill h-full rounded-full bg-paddock-3" style={{ width: `${Math.min(100, (spent / cap) * 100)}%` }} />
+                            </div>
+                            <p className="mt-1 text-xs text-ink/55">
+                              {h.autopilot || s.mode === "full_autopilot" ? "Paid automatically" : s.mode === "trust_ladder" ? <Ladder steps={h.approvalsInARow} /> : "Asks every time"}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </Panel>
+
+                <Panel title="Recent activity" className="lg:col-span-3" action={done.length > 5 && <button className="text-sm font-semibold text-brand-700" onClick={() => go("activity")}>See all</button>}>
+                  <ActivityList entries={done.slice(0, 5)} categoryOf={categoryOf} />
+                </Panel>
+              </div>
+
+              <div className="rounded-2xl bg-paddock p-3 lg:hidden">{demo}</div>
             </div>
           )}
 
           {page === "habits" && (
-            <Card title="Your habits" right={<span className="text-xs text-stone-500">Switch on what Reins may pay for</span>}>
-              <ul className="divide-y divide-stone-100">
-                {s.habits.map((h) => (
-                  <li key={h.id} className="py-3">
-                    <div className="flex items-center gap-3">
-                      <Toggle on={h.enabled} onClick={() => toggleHabit(h)} label={`Switch ${h.name}`} />
-                      <button className="min-w-0 flex-1 text-left" onClick={() => setOpenHabit(openHabit === h.id ? null : h.id)}>
-                        <span className="text-sm font-medium">{h.name}</span>
-                        <span className="text-sm text-stone-500"> · {usd(h.avgAmount)} {describeCadence(h.cadence)}</span>
-                        {h.note && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-500 align-middle" title={h.note} />}
-                      </button>
-                      {h.enabled && h.autopilot && <Chip tone="good">auto</Chip>}
-                    </div>
-                    {openHabit === h.id && (
-                      <div className="ml-14 mt-2 space-y-2 text-xs text-stone-500">
-                        {h.note && <p className="text-brand-700">{h.note}</p>}
-                        <p>{h.kind} · seen {h.count} times · {h.merchants.join(", ")}</p>
-                        <label className="flex items-center gap-2">
-                          Limit $
-                          <input type="number" className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right text-stone-900" value={h.capPerPurchase}
-                            onChange={(e) => setHabit(h.id, { capPerPurchase: Number(e.target.value) || 0 })} />
-                          <span>({describeLimit(h)})</span>
-                        </label>
-                        {h.enabled && !h.autopilot && s.mode === "trust_ladder" && <p>Trust ladder: {h.approvalsInARow}/{TRUST_LADDER_STEPS} approvals in a row</p>}
+            <div className="space-y-5">
+              <header>
+                <h1 className="font-display text-3xl">Your habits</h1>
+                <p className="mt-1 text-sm text-ink/60">Found in {s.statement?.transactions ?? 0} transactions. Switch on only what Reins may pay for.</p>
+              </header>
+              <Panel>
+                <ul className="divide-y divide-ink/10">
+                  {s.habits.map((h) => (
+                    <li key={h.id} className="py-3">
+                      <div className="flex items-center gap-3">
+                        <CategoryIcon category={h.category} />
+                        <button className="min-w-0 flex-1 text-left" onClick={() => setOpenHabit(openHabit === h.id ? null : h.id)} aria-expanded={openHabit === h.id}>
+                          <span className="block text-sm font-medium">{h.name}{h.note && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-500 align-middle" />}</span>
+                          <span className="block text-xs text-ink/60">{usd(h.avgAmount)}, {describeCadence(h.cadence)}</span>
+                        </button>
+                        {h.enabled && h.autopilot && <Chip tone="good">Auto</Chip>}
+                        <Toggle on={h.enabled} onClick={() => toggleHabit(h)} label={`Switch ${h.name}`} />
                       </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {s.statement && <p className="mt-2 text-xs text-stone-400">From {s.statement.transactions} transactions, {s.statement.from} to {s.statement.to}. Tap a habit for details.</p>}
-            </Card>
+                      {openHabit === h.id && (
+                        <div className="ml-12 mt-3 space-y-2 rounded-xl bg-linen p-3 text-xs text-ink/70">
+                          {h.note && <p className="text-brand-700">{h.note}</p>}
+                          <p>Seen {h.count} times at {h.merchants.join(", ")}.</p>
+                          <label className="flex items-center gap-2">
+                            Hard limit $
+                            <input type="number" className="w-16 rounded-lg border border-ink/20 bg-white px-2 py-1 text-right text-ink" value={h.capPerPurchase}
+                              onChange={(e) => setHabit(h.id, { capPerPurchase: Number(e.target.value) || 0 })} />
+                            <span>{describeLimit(h)}</span>
+                          </label>
+                          {h.enabled && !h.autopilot && s.mode === "trust_ladder" && <Ladder steps={h.approvalsInARow} />}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+            </div>
           )}
 
           {page === "activity" && (
-            <Card title={`All activity · ${done.length}`}><ActivityList entries={done} /></Card>
+            <div className="space-y-5">
+              <h1 className="font-display text-3xl">Activity</h1>
+              <Panel><ActivityList entries={done} categoryOf={categoryOf} /></Panel>
+            </div>
           )}
 
           {page === "settings" && (
-            <div className="space-y-4">
-              <Card title="How much should Reins ask?">
-                <div className="mt-2 space-y-2">
+            <div className="max-w-2xl space-y-5">
+              <h1 className="font-display text-3xl">Settings</h1>
+              <Panel title="How much should Reins ask?">
+                <div className="space-y-2">
                   {MODES.map((m) => (
-                    <label key={m.id} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${s.mode === m.id ? "border-brand-500 bg-brand-50" : "border-stone-200"}`}>
+                    <label key={m.id} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${s.mode === m.id ? "border-brand-500 bg-brand-50" : "border-ink/15"}`}>
                       <input type="radio" className="mt-1 accent-brand-500" checked={s.mode === m.id} onChange={() => update((p) => ({ ...p, mode: m.id }))} />
-                      <span><span className="block text-sm font-medium">{m.label}</span><span className="text-xs text-stone-500">{m.hint}</span></span>
+                      <span><span className="block text-sm font-medium">{m.label}</span><span className="text-xs text-ink/60">{m.hint}</span></span>
                     </label>
                   ))}
                 </div>
-                <p className="mt-2 text-xs text-stone-500">Safe Mode overrides this whenever money runs low.</p>
-              </Card>
+                <p className="mt-2 text-xs text-ink/60">Safe Mode overrides this whenever money runs low.</p>
+              </Panel>
 
-              <Card title="Wallet (read-only)">
-                <div className="mt-2 flex gap-2">
-                  <input className="min-w-0 flex-1 rounded-lg border border-stone-300 px-3 py-1.5 text-sm" placeholder="0x… address" value={s.walletAddress}
-                    onChange={(e) => update((p) => ({ ...p, walletAddress: e.target.value }))} />
+              <Panel title="Wallet (read-only)">
+                <div className="flex gap-2">
+                  <input className="min-w-0 flex-1 rounded-lg border border-ink/20 px-3 py-1.5 text-sm" placeholder="0x… address" value={s.walletAddress}
+                    onChange={(e) => update((p) => ({ ...p, walletAddress: e.target.value }))} aria-label="Wallet address" />
                   <Button variant="secondary" disabled={!!busy || !s.walletAddress} onClick={() => run("Reading wallet…", readWallet)}>Connect</Button>
                 </div>
                 {s.walletRead && (
-                  <p className="mt-2 text-xs text-stone-500">
-                    Kite testnet: {s.walletRead.balance} {s.walletRead.symbol} ·{" "}
-                    <a className="text-brand-600 underline" href={s.walletRead.explorer} target="_blank" rel="noreferrer">view</a>
+                  <p className="mt-2 text-xs text-ink/60">
+                    Kite testnet: {s.walletRead.balance} {s.walletRead.symbol}.{" "}
+                    <a className="text-brand-700 underline" href={s.walletRead.explorer} target="_blank" rel="noreferrer">View on KiteScan</a>
                   </p>
                 )}
                 <label className="mt-3 flex items-center gap-2 text-sm">
                   <input type="checkbox" className="accent-brand-500" checked={s.useDemoBalance} onChange={(e) => update((p) => ({ ...p, useDemoBalance: e.target.checked }))} />
-                  Use demo balance instead
+                  Use the demo balance instead
                 </label>
-              </Card>
+              </Panel>
 
-              <Card title="Safety floor">
-                <label className="mt-2 flex items-center gap-2 text-sm">
-                  $<input type="number" className="w-24 rounded-lg border border-stone-300 px-2 py-1" value={s.safetyFloor}
-                    onChange={(e) => update((p) => ({ ...p, safetyFloor: Number(e.target.value) || 0 }))} />
+              <Panel title="Safety floor">
+                <label className="flex items-center gap-2 text-sm">
+                  $<input type="number" className="w-24 rounded-lg border border-ink/20 px-2 py-1" value={s.safetyFloor}
+                    onChange={(e) => update((p) => ({ ...p, safetyFloor: Number(e.target.value) || 0 }))} aria-label="Safety floor in dollars" />
                 </label>
-                <p className="mt-1 text-xs text-stone-500">Safe Mode switches on when your wallet can&apos;t cover the next 2 weeks of bills plus this amount.</p>
-              </Card>
+                <p className="mt-1 text-xs text-ink/60">Safe Mode switches on when your wallet can&apos;t cover the next 2 weeks of bills plus this amount.</p>
+              </Panel>
 
-              <div className="space-y-2 px-1 text-xs text-stone-500">
-                <p>SERV: {status?.serv.mode === "live" ? `live (${status.serv.model})` : "mock mode"} · Payments: {status?.payments ?? "…"}</p>
-                <button className="text-red-600" onClick={() => { if (confirm("Start over with a new statement?")) { update(() => INITIAL); go("overview"); } }}>Start over</button>
+              <div className="space-y-2 px-1 text-xs text-ink/60">
+                <p>SERV: {status?.serv.mode === "live" ? `live (${status.serv.model})` : "mock mode"}. Payments: {status?.payments ?? "…"}.</p>
+                <button className="font-medium text-red-700" onClick={() => { if (confirm("Start over with a new statement?")) { update(() => INITIAL); go("overview"); } }}>Start over</button>
               </div>
             </div>
           )}
@@ -427,10 +499,126 @@ export default function ReinsApp() {
   );
 }
 
-// ---------------- Small UI pieces ----------------
+// ---------------- Pieces ----------------
 
 type Page = "overview" | "habits" | "activity" | "settings";
 type IconName = "home" | "habits" | "activity" | "settings";
+
+// The signature piece: a stitched leather strap. Cognac fill = your wallet. Brass buckle = where Safe Mode starts.
+function ReinMeter({ wallet, needed, upcomingTotal, floor, pot, active, onTopUp }:
+  { wallet: number; needed: number; upcomingTotal: number; floor: number; pot: number; active: boolean; onTopUp: () => void }) {
+  const max = Math.max(wallet, needed * 2, 50) * 1.08;
+  const fill = Math.min(100, (wallet / max) * 100);
+  const buckle = Math.min(100, (needed / max) * 100);
+  const slack = wallet - needed;
+  const mood = active ? "Safe Mode is on" : slack < needed * 0.5 ? "Getting tight" : "Plenty of slack";
+  return (
+    <section className={`overflow-hidden rounded-3xl p-6 text-white sm:p-8 ${active ? "bg-safe-700" : "bg-paddock"}`}>
+      <div className="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <p className="text-sm text-white/65">Your wallet</p>
+          <p className="font-display text-5xl leading-tight sm:text-6xl">{usd(wallet)}</p>
+          <p className="mt-1 text-sm text-white/75">
+            {active ? `${usd(-slack)} short of what the next 2 weeks need.` : `${usd(slack)} of slack before Safe Mode.`}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-white/10 px-4 py-3">
+          <p className="text-xs text-white/65">Spending pot (Kite Passport)</p>
+          <p className="font-display text-2xl">{usd(pot)}</p>
+          <button className="mt-1 text-sm font-semibold text-brass underline-offset-2 hover:underline" onClick={onTopUp}>Top up $40</button>
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <div className="mb-2 flex justify-between text-sm">
+          <span className="font-semibold">{mood}</span>
+          <span className="text-white/65">Safe Mode below {usd(needed)}</span>
+        </div>
+        <div className="relative h-7" role="img" aria-label={`Wallet ${usd(wallet)}; Safe Mode starts below ${usd(needed)}`}>
+          <div className="absolute inset-0 rounded-full bg-black/25" />
+          <div className={`rein-fill absolute inset-y-0 left-0 rounded-full ${active ? "bg-white/70" : "bg-brand-500"}`} style={{ width: `${fill}%` }} />
+          <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/35" />
+          <div className="absolute -inset-y-1.5 w-4 -translate-x-1/2 rounded-sm border-[3px] border-brass bg-transparent" style={{ left: `${buckle}%` }}>
+            <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 bg-brass" />
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-white/60">Bills due in the next 2 weeks {usd(upcomingTotal)}, plus your {usd(floor)} safety floor.</p>
+      </div>
+    </section>
+  );
+}
+
+function UsualWeek({ values, today }: { values?: number[]; today: string }) {
+  if (!values?.length) return <p className="text-sm text-ink/60">Upload a statement to see your usual week.</p>;
+  const max = Math.max(...values, 1);
+  const todayIdx = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return (
+    <div className="flex h-44 items-end gap-2 pt-2" role="img" aria-label={`Usual daily spending: ${days.map((d, i) => `${d} ${usd(values[i])}`).join(", ")}`}>
+      {values.map((v, i) => (
+        <div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+          <span className={`text-[11px] ${i === todayIdx ? "font-semibold text-brand-700" : "text-ink/50"}`}>${Math.round(v)}</span>
+          <div className={`w-full rounded-t-md ${i === todayIdx ? "bg-brand-500" : "bg-paddock-3/25"}`} style={{ height: `${Math.max(4, (v / max) * 100)}%` }} />
+          <span className={`text-xs ${i === todayIdx ? "font-semibold text-ink" : "text-ink/55"}`}>{days[i].slice(0, 1)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Ladder({ steps }: { steps: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {[0, 1, 2].map((i) => <span key={i} className={`h-2 w-2 rounded-full ${i < steps ? "bg-brass" : "bg-ink/15"}`} />)}
+      <span>{steps} of 3 approvals to earn autopilot</span>
+    </span>
+  );
+}
+
+function PlanTag({ plan }: { plan: "auto" | "asks" | "paused" }) {
+  const t = { auto: ["Auto", "bg-paddock-3/15 text-paddock"], asks: ["Asks you", "bg-brand-50 text-brand-700"], paused: ["Paused", "bg-safe-50 text-safe-700"] }[plan];
+  return <span className={`w-20 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-medium ${t[1]}`}>{t[0]}</span>;
+}
+
+function DateBadge({ date }: { date: string }) {
+  const d = new Date(`${date}T00:00:00Z`);
+  return (
+    <span className="w-10 shrink-0 text-center leading-tight">
+      <span className="block text-[11px] text-ink/55">{d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}</span>
+      <span className="block font-display text-lg">{d.getUTCDate()}</span>
+    </span>
+  );
+}
+
+function EmptyNote({ text, action, onClick }: { text: string; action: string; onClick: () => void }) {
+  return (
+    <div className="py-4">
+      <p className="text-sm text-ink/60">{text}</p>
+      <button className="mt-2 text-sm font-semibold text-brand-700" onClick={onClick}>{action}</button>
+    </div>
+  );
+}
+
+const CATEGORY_ICONS: Record<string, { d: string; bg: string }> = {
+  coffee: { d: "M5 9h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 4v2M12.5 4v2", bg: "bg-[#f6e3d3] text-[#8a4b1f]" },
+  nightlife: { d: "M6 4h12l-6 8zM12 12v7M8.5 20h7", bg: "bg-[#e8e1f5] text-[#5a3c9a]" },
+  rides: { d: "M5 16v-4l2-5h10l2 5v4M4 16h16M7.5 19v-3M16.5 19v-3M8 12.5h.01M16 12.5h.01", bg: "bg-[#dfe9f2] text-[#2f5a80]" },
+  food: { d: "M3.5 11h17a8.5 8.5 0 0 1-17 0zM9 7.5c0-1 .8-2 1.8-2M13.5 7.5c0-1 .8-2 1.8-2", bg: "bg-[#fbe3d8] text-[#b0461c]" },
+  groceries: { d: "M5 9h14l-1.2 11H6.2zM9 9V7a3 3 0 0 1 6 0v2", bg: "bg-[#dcecdf] text-[#2c6150]" },
+  subscriptions: { d: "M20 12a8 8 0 1 1-2.4-5.7M20 4.5V9h-4.5M10.5 9.5v5l4-2.5z", bg: "bg-[#f3e9cf] text-[#8a6a1f]" },
+  phone: { d: "M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2", bg: "bg-[#e3e8ea] text-[#3e5059]" },
+  rent: { d: "M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5M10 20v-5h4v5", bg: "bg-[#ece4dc] text-[#6b4a35]" },
+  other: { d: "M4 12V4h8l8 8-8 8zM8 8h.01", bg: "bg-[#e9ebe6] text-[#4b564f]" },
+};
+
+function CategoryIcon({ category }: { category: string }) {
+  const c = CATEGORY_ICONS[category] ?? CATEGORY_ICONS.other;
+  return (
+    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${c.bg}`}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={c.d} /></svg>
+    </span>
+  );
+}
 
 function Icon({ name }: { name: IconName }) {
   const d = {
@@ -446,20 +634,19 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-function ActivityList({ entries }: { entries: LogEntry[] }) {
-  if (!entries.length) return <p className="py-2 text-sm text-stone-500">Nothing yet. Switch on a habit, or ask Reins to pay for something.</p>;
+function ActivityList({ entries, categoryOf }: { entries: LogEntry[]; categoryOf: (habitId?: string) => string }) {
+  if (!entries.length) return <p className="py-4 text-sm text-ink/60">Nothing paid yet. Approve a payment or move the demo clock forward.</p>;
   return (
-    <ul className="divide-y divide-stone-100">
+    <ul className="divide-y divide-ink/10">
       {entries.map((l) => (
-        <li key={l.id} className="flex items-center justify-between gap-3 py-2.5" title={l.decision.reason}>
-          <div className="min-w-0">
-            <p className="truncate text-sm">{l.request.merchant} <span className="text-stone-500">· {pretty(l.date)}</span></p>
-            {l.outcome !== "paid" && <p className="truncate text-xs text-stone-500">{l.decision.reason}</p>}
+        <li key={l.id} className="flex items-center gap-3 py-2.5" title={l.decision.reason}>
+          <CategoryIcon category={categoryOf(l.request.habitId)} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm">{l.request.merchant}</p>
+            <p className="truncate text-xs text-ink/55">{l.outcome === "paid" ? pretty(l.date) : l.decision.reason}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-sm font-medium">{usd(l.request.amount)}</span>
-            <Outcome outcome={l.outcome} />
-          </div>
+          <span className="text-sm font-medium">{usd(l.request.amount)}</span>
+          <Outcome outcome={l.outcome} />
         </li>
       ))}
     </ul>
@@ -474,11 +661,11 @@ function ErrorBox({ error, onClose }: { error: string; onClose: () => void }) {
   );
 }
 
-function Logo({ size = 36 }: { size?: number }) {
+function Logo({ size = 36, tile = true }: { size?: number; tile?: boolean }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
       <defs><clipPath id="reins-logo-clip"><rect width="100" height="100" rx="23" /></clipPath></defs>
-      <rect width="100" height="100" rx="23" fill="#1C1917" />
+      {tile && <rect width="100" height="100" rx="23" fill="#13392B" />}
       <g clipPath="url(#reins-logo-clip)">
         <path d="M51 11 C52 8 53 6 55 4 C56 9 56 13 55 18 L52 17 Z" fill="#C9530F" />
         <path d="M53 17 C59 15 65 17 69 21 C66 22 66 24 69 26 C74 29 77 34 79 39 C76 39 76 41 78 44 C81 49 83 55 84 62 L80 46 C76 32 66 22 53 18 Z" fill="#C9530F" />
@@ -496,63 +683,64 @@ function Logo({ size = 36 }: { size?: number }) {
 
 function Upload({ onCsv, busy }: { onCsv: (csv: string) => void; busy: string | null }) {
   return (
-    <div className="rounded-3xl border border-stone-200 bg-white p-8 text-center">
-      <div className="flex justify-center"><Logo size={64} /></div>
-      <h2 className="mt-4 text-2xl font-semibold">Spend on autopilot. Keep the reins.</h2>
-      <p className="mt-2 text-stone-500">Upload a bank statement. Reins finds your regular spending, and nothing runs until you switch it on.</p>
-      <div className="mt-6 flex flex-col items-center gap-3">
-        <label className="cursor-pointer rounded-xl bg-brand-500 px-5 py-2.5 font-medium text-white hover:bg-brand-600">
+    <div className="text-center">
+      <div className="flex justify-center"><Logo size={96} tile={false} /></div>
+      <h1 className="mt-6 font-display text-4xl sm:text-5xl">Spend on autopilot.<br />Keep the reins.</h1>
+      <p className="mx-auto mt-4 max-w-md text-white/70">Upload a bank statement. Reins finds your regular spending, and nothing runs until you switch it on.</p>
+      <div className="mt-8 flex flex-col items-center gap-3">
+        <label className="cursor-pointer rounded-full bg-brand-500 px-6 py-3 font-semibold text-white hover:bg-brand-600 focus-within:outline-2 focus-within:outline-white">
           Upload statement (CSV)
-          <input type="file" accept=".csv,text/csv" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) onCsv(await f.text()); }} />
+          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (e) => { const f = e.target.files?.[0]; if (f) onCsv(await f.text()); }} />
         </label>
-        <button className="text-sm text-brand-600 underline" disabled={!!busy}
+        <button className="text-sm text-brass underline underline-offset-4" disabled={!!busy}
           onClick={async () => onCsv(await (await fetch("/sample_bank_statement.csv")).text())}>
-          or try the sample statement
+          Try it with a sample statement
         </button>
-        {busy && <p className="text-sm text-stone-500">{busy}</p>}
+        {busy && <p className="text-sm text-white/70">{busy}</p>}
       </div>
     </div>
   );
 }
 
-function Card({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+function Panel({ title, action, tone, className = "", children }: { title?: string; action?: React.ReactNode; tone?: "cognac"; className?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white px-5 py-4">
-      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-semibold">{title}</h2>
-        {right}
-      </div>
+    <section className={`rounded-2xl bg-white px-5 py-4 ${tone === "cognac" ? "border-l-4 border-brand-500" : ""} ${className}`}>
+      {(title || action) && (
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          {title && <h2 className="font-display text-lg">{title}</h2>}
+          {action}
+        </div>
+      )}
       {children}
     </section>
   );
 }
 
-function Button({ variant = "primary", className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "light" | "ghost" }) {
+function Button({ variant = "primary", className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" }) {
   const look = {
     primary: "bg-brand-500 text-white hover:bg-brand-600",
-    secondary: "border border-stone-300 bg-white text-stone-800 hover:bg-stone-50",
-    light: "bg-white text-safe-700 hover:bg-white/90",
-    ghost: "border border-white/20 text-stone-200 hover:bg-white/10",
+    secondary: "border border-ink/20 bg-white text-ink hover:bg-linen",
+    ghost: "border border-white/25 text-white hover:bg-white/10",
   }[variant];
-  return <button {...props} className={`rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${look} ${className}`} />;
+  return <button {...props} className={`rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${look} ${className}`} />;
 }
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
     <button role="switch" aria-checked={on} aria-label={label} onClick={onClick}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-brand-500" : "bg-stone-300"}`}>
-      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${on ? "left-5" : "left-0.5"}`} />
+      className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-brand-500" : "bg-ink/20"}`}>
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-5" : "left-0.5"}`} />
     </button>
   );
 }
 
 function Chip({ children, tone }: { children: React.ReactNode; tone: "good" | "muted" | "warn" | "bad" }) {
-  const t = { good: "bg-emerald-100 text-emerald-800", muted: "bg-stone-100 text-stone-600", warn: "bg-amber-100 text-amber-800", bad: "bg-red-100 text-red-800" }[tone];
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${t}`}>{children}</span>;
+  const t = { good: "bg-paddock-3/15 text-paddock", muted: "bg-ink/5 text-ink/60", warn: "bg-brand-50 text-brand-700", bad: "bg-red-50 text-red-700" }[tone];
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${t}`}>{children}</span>;
 }
 
 function Outcome({ outcome }: { outcome: LogEntry["outcome"] }) {
-  const map = { paid: ["paid", "good"], waiting: ["waiting", "warn"], blocked: ["blocked", "bad"], declined: ["declined", "muted"], failed: ["failed", "bad"] } as const;
+  const map = { paid: ["Paid", "good"], waiting: ["Waiting", "warn"], blocked: ["Blocked", "bad"], declined: ["Declined", "muted"], failed: ["Failed", "bad"] } as const;
   const [label, tone] = map[outcome];
   return <Chip tone={tone}>{label}</Chip>;
 }

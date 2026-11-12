@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     from: transactions[0].date,
     to: transactions[transactions.length - 1].date,
     latestBalanceDate: transactions[transactions.length - 1].date,
+    usualWeek: usualWeek(transactions),
   });
 }
 
@@ -65,4 +66,18 @@ function mockNote(h: Habit) {
   if (h.category === "subscriptions" && /stream|flix|netflix|prime/i.test(h.merchants.join(" "))) return "Streaming subscription. Still watching? Leave it off if not.";
   if (h.cadence.type === "frequent") return "No fixed day, so Reins handles these as on-demand requests.";
   return undefined;
+}
+
+// Average everyday spending per weekday (Mon..Sun). Big one-offs (over $200, e.g. rent) are left out.
+function usualWeek(txs: { date: string; amount: number }[]) {
+  const totals = new Array(7).fill(0);
+  const days = new Array(7).fill(0);
+  const first = new Date(`${txs[0].date}T00:00:00Z`).getTime();
+  const last = new Date(`${txs[txs.length - 1].date}T00:00:00Z`).getTime();
+  for (let t = first; t <= last; t += 864e5) days[(new Date(t).getUTCDay() + 6) % 7]++;
+  for (const tx of txs) {
+    if (tx.amount >= 0 || tx.amount < -200) continue;
+    totals[(new Date(`${tx.date}T00:00:00Z`).getUTCDay() + 6) % 7] += -tx.amount;
+  }
+  return totals.map((v, i) => Math.round((v / Math.max(1, days[i])) * 100) / 100);
 }

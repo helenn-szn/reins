@@ -1,21 +1,38 @@
 @import "tailwindcss";
 
-/* Reins brand: orange for the product, deep purple for Safe Mode so it never looks like branding */
+/* Reins: riding-tack palette. Paddock green and cognac leather, brass hardware.
+   Safe Mode keeps its own purple so it never reads as branding. */
 @theme {
-  --color-brand-50: #fff4ec;
-  --color-brand-100: #ffe3cf;
+  --color-paddock: #13392b;
+  --color-paddock-2: #1d4a39;
+  --color-paddock-3: #2c6150;
+  --color-brand-50: #fdeee3;
+  --color-brand-100: #f9d6be;
   --color-brand-500: #f26b1d;
   --color-brand-600: #d9560b;
-  --color-brand-700: #b44509;
-  --color-ink: #1c1917;
-  --color-safe-50: #f3effe;
+  --color-brand-700: #a8460f;
+  --color-brass: #c8a04a;
+  --color-linen: #eef0ea;
+  --color-ink: #17231d;
+  --color-safe-50: #f1ecfd;
   --color-safe-600: #6d3fd8;
   --color-safe-700: #5a2fc0;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-display: "Young Serif", Georgia, serif;
 }
 
 body {
-  background: #faf8f6;
-  color: #1c1917;
+  background: var(--color-linen);
+  color: var(--color-ink);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rein-fill { transition: width 600ms cubic-bezier(.2, .8, .2, 1); }
 }
