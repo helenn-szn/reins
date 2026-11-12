@@ -5,6 +5,7 @@ import type { Decision, EngineState, Habit, LogEntry, Mode, Payment, PurchaseReq
 import { describeCadence, describeLimit } from "@/lib/habits";
 import { isDue, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
 import { addDays, pretty } from "@/lib/dates";
+import { SHOPS } from "@/lib/shopsInfo";
 
 type WalletRead = { symbol: string; balance: number; native: number; explorer: string };
 
@@ -52,8 +53,9 @@ export default function ReinsApp() {
   const ref = useRef<AppState>(INITIAL);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; payScale?: number } | null>(null);
+  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; shopPayTo?: string; payScale?: number } | null>(null);
   const [agentWallet, setAgentWallet] = useState<{ balance: number; symbol: string; gas: number } | null>(null);
+  const [shopWallet, setShopWallet] = useState<{ balance: number; symbol: string } | null>(null);
   const [request, setRequest] = useState("Order lunch under $15");
 
   // Theme: follow the system by default, or a choice the user made in Settings
@@ -101,6 +103,10 @@ export default function ReinsApp() {
     try {
       const r = await fetch(`/api/wallet?address=${status.agent}`).then((x) => x.json());
       if (r.token) setAgentWallet({ balance: r.token.balance, symbol: r.token.symbol, gas: r.native.balance });
+      if (status.shopPayTo) {
+        const sh = await fetch(`/api/wallet?address=${status.shopPayTo}`).then((x) => x.json());
+        if (sh.token) setShopWallet({ balance: sh.token.balance, symbol: sh.token.symbol });
+      }
     } catch { /* shown as unknown */ }
   }, [status]);
   useEffect(() => { readAgentWallet(); }, [readAgentWallet]);
@@ -267,6 +273,7 @@ export default function ReinsApp() {
     { id: "dashboard", label: "Dashboard", icon: "home" },
     { id: "approvals", label: "Approvals", icon: "check", badge: waiting.length || undefined },
     { id: "activity", label: "Activity", icon: "activity" },
+    { id: "shops", label: "Shops", icon: "store" },
     { id: "settings", label: "Settings", icon: "settings" },
   ];
 
@@ -558,6 +565,13 @@ export default function ReinsApp() {
           </Card>
         )}
 
+        {page === "shops" && (
+          <ShopsPage
+            orders={s.log.filter((l) => l.outcome === "paid" && l.payment?.provider === "kite" && l.payment.shop)}
+            live={status?.payments === "kite"} shopPayTo={status?.shopPayTo} shopWallet={shopWallet} payScale={status?.payScale}
+            onRefresh={readAgentWallet} onTry={() => { setRequest("Buy my usual coffee"); go("dashboard"); }} />
+        )}
+
         {page === "settings" && (
           <div className="grid max-w-3xl gap-4">
             <Card title="Appearance">
@@ -680,7 +694,7 @@ async function browserWalletAddress(): Promise<string> {
 
 // ---------------- Small UI pieces ----------------
 
-type Page = "dashboard" | "approvals" | "activity" | "settings";
+type Page = "dashboard" | "approvals" | "activity" | "shops" | "settings";
 
 
 function Landing({ onCsv, onWallet, onBrowserWallet, busy, error }: { onCsv: (csv: string) => void; onWallet: (address: string) => void; onBrowserWallet: () => void; busy: string | null; error: string | null }) {
@@ -768,6 +782,72 @@ function HorseBackdrop() {
   );
 }
 
+// The merchant side of the demo: what each x402 shop received from Reins, and the real money in its Kite wallet
+function ShopsPage({ orders, live, shopPayTo, shopWallet, payScale, onRefresh, onTry }: {
+  orders: LogEntry[]; live: boolean; shopPayTo?: string; shopWallet: { balance: number; symbol: string } | null; payScale?: number;
+  onRefresh: () => void; onTry: () => void;
+}) {
+  useEffect(() => { onRefresh(); }, [onRefresh]);
+  const steps = [
+    ["Reins asks", "Requests the item from the shop, like any website."],
+    ["402 Payment Required", "The shop replies with the price, the token and where to pay."],
+    ["Reins pays on Kite", "Checks the price is what you approved, then pays from its agent wallet."],
+    ["Shop confirms", "Verifies the payment on-chain, then confirms the order."],
+  ];
+  return (
+    <div className="grid gap-4">
+      <Card title="Demo shops" right={live && shopPayTo ? (
+        <a className="text-xs text-stone-500 underline" href={`https://testnet.kitescan.ai/address/${shopPayTo}`} target="_blank" rel="noreferrer">
+          Shops&apos; wallet{shopWallet ? `: ${shopWallet.balance.toFixed(4)} ${shopWallet.symbol} received` : ""}
+        </a>) : undefined}>
+        <p className="text-sm text-stone-600">Four shops that sell to AI agents over x402 on Kite&apos;s test network. Every order below was paid on-chain by Reins.
+          {payScale && payScale !== 1 ? ` On testnet each payment is 1/${Math.round(1 / payScale)} of the price.` : ""}</p>
+        <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {steps.map(([t, d], i) => (
+            <li key={t} className="rounded-xl bg-stone-50 p-3">
+              <p className="text-sm font-medium"><span className="mr-1.5 text-brand-600">{i + 1}</span>{t}</p>
+              <p className="mt-0.5 text-xs text-stone-500">{d}</p>
+            </li>
+          ))}
+        </ol>
+        {!live && <p className="mt-3 text-xs text-stone-500">Payments are in demo mode right now, so the shops don&apos;t receive anything.</p>}
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {Object.values(SHOPS).map((shop) => {
+          const mine = orders.filter((o) => o.payment?.shop === shop.name);
+          const total = mine.reduce((a, o) => a + o.request.amount, 0);
+          return (
+            <Card key={shop.name} title={shop.name} right={<span className="text-xs text-stone-500">{mine.length} order{mine.length === 1 ? "" : "s"} · {usd(total)}</span>}>
+              <p className="text-xs text-stone-500">{shop.sells}</p>
+              {!mine.length ? (
+                <div className="mt-3 rounded-xl border border-dashed border-stone-200 p-3 text-sm text-stone-500">
+                  No orders yet.{shop.name === "Reins Coffee" && live && <button className="ml-1 text-brand-600 underline" onClick={onTry}>Ask Reins for a coffee</button>}
+                </div>
+              ) : (
+                <ul className="mt-2 divide-y divide-stone-100">
+                  {mine.slice(0, 5).map((o) => (
+                    <li key={o.id} className="flex items-center justify-between gap-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm">{o.request.description || o.request.merchant}</p>
+                        <p className="text-[11px] text-stone-500">{pretty(o.date)}{o.payment?.orderId ? ` · order ${o.payment.orderId.replace("ord_", "")}` : ""} · {o.payment?.onchain}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Chip tone="good">confirmed</Chip>
+                        {o.payment?.explorerUrl && <a className="text-xs underline" href={o.payment.explorerUrl} target="_blank" rel="noreferrer">KiteScan</a>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Card({ id, title, right, children }: { id?: string; title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-6 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
@@ -815,13 +895,14 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-type IconName = "home" | "check" | "habits" | "activity" | "settings" | "bell" | "menu";
+type IconName = "home" | "check" | "habits" | "activity" | "store" | "settings" | "bell" | "menu";
 
 function Icon({ name }: { name: IconName }) {
   const d = {
     home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
     check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
     menu: "M4 7h16M4 12h16M4 17h16",
+    store: "M4 4h16l1 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0zM5 12v8h14v-8M10 20v-5h4v5",
     bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0",
     habits: "M4 7h10M4 12h16M4 17h7M17 4.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM14 14.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z",
     activity: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
