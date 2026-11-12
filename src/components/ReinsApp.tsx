@@ -84,7 +84,13 @@ export default function ReinsApp() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) { ref.current = { ...INITIAL, ...JSON.parse(saved) }; setS(ref.current); }
+      if (saved) {
+        const st: AppState = { ...INITIAL, ...JSON.parse(saved) };
+        // A payment cut off by a reload never got its answer: show it as needing a check, not as waiting
+        st.log = st.log.map((l) => (l.outcome === "paying" || (l.outcome === "waiting" && l.decision.action !== "ask"))
+          ? { ...l, outcome: "failed", decision: { ...l.decision, reason: "The page closed while this was paying. Check the agent wallet on KiteScan before trying again." } } : l);
+        ref.current = st; setS(st);
+      }
     } catch { /* ignore */ }
     fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
@@ -159,7 +165,7 @@ export default function ReinsApp() {
     const decision = await post<Decision>("/api/decide", { request: req, state: engineState(ref.current) });
     const entry: LogEntry = {
       id: uid(), date: req.date, request: req, decision,
-      outcome: decision.action === "allow" ? "waiting" : decision.action === "ask" ? "waiting" : "blocked",
+      outcome: decision.action === "allow" ? "paying" : decision.action === "ask" ? "waiting" : "blocked",
     };
     update((p) => ({ ...p, log: [entry, ...p.log] }));
     if (decision.action === "allow") await pay(entry);
@@ -182,7 +188,7 @@ export default function ReinsApp() {
 
   async function approve(entry: LogEntry) {
     if (entry.request.amount > ref.current.potBalance) { setError("Not enough in your spending pot. Top it up first."); return; }
-    update((p) => ({ ...p, log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "waiting" } : l)) }));
+    update((p) => ({ ...p, log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "paying" } : l)) }));
     await pay(entry);
     if (entry.request.habitId) {
       update((p) => ({ ...p, habits: p.habits.map((h) => (h.id === entry.request.habitId ? { ...h, approvalsInARow: h.approvalsInARow + 1 } : h)) }));
@@ -434,8 +440,9 @@ export default function ReinsApp() {
                     : safe?.active ? (
                       <p><b>Safe Mode is on.</b> {safe.auto ? `Your wallet can't cover the next 2 weeks of bills plus your floor (${usd(safe.needed)}).` : "You switched it on."} Lifestyle habits are paused and everything else asks first.</p>
                     ) : latest ? (
-                      <p><b>Latest:</b> {latest.request.merchant}, {usd(latest.request.amount)}, {latest.outcome === "waiting" ? "waiting for your approval" : latest.outcome}.
-                        {latest.outcome === "waiting" && <button className="ml-2 underline" onClick={() => go("approvals")}>Review</button>}</p>
+                      <p><b>Latest:</b> {latest.request.merchant}, {usd(latest.request.amount)}, {latest.outcome === "waiting" ? "waiting for your approval" : latest.outcome === "paying" ? "paying…" : latest.outcome}.
+                        {latest.outcome === "waiting" && <button className="ml-2 underline" onClick={() => go("approvals")}>Review</button>}
+                        {(latest.outcome === "paid" || latest.outcome === "failed") && <button className="ml-2 underline" onClick={() => go("activity")}>View</button>}</p>
                     ) : <p className="text-white/85">Reins is ready. Switch on your habits below.</p>}
                 </div>
               </section>
@@ -794,7 +801,7 @@ function Chip({ children, tone }: { children: React.ReactNode; tone: "good" | "m
 }
 
 function Outcome({ outcome }: { outcome: LogEntry["outcome"] }) {
-  const map = { paid: ["paid", "good"], waiting: ["waiting", "warn"], blocked: ["blocked", "bad"], declined: ["declined", "muted"], failed: ["failed", "bad"] } as const;
+  const map = { paid: ["paid", "good"], waiting: ["waiting", "warn"], paying: ["paying", "warn"], blocked: ["blocked", "bad"], declined: ["declined", "muted"], failed: ["failed", "bad"] } as const;
   const [label, tone] = map[outcome];
   return <Chip tone={tone}>{label}</Chip>;
 }

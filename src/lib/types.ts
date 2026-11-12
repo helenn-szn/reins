@@ -76,7 +76,7 @@ export type LogEntry = {
   date: string;
   request: PurchaseRequest;
   decision: Decision;
-  outcome: "paid" | "waiting" | "blocked" | "declined" | "failed";
+  outcome: "paid" | "waiting" | "paying" | "blocked" | "declined" | "failed"; // waiting = needs your OK
   payment?: Payment;
 };
 
