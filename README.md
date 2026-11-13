@@ -13,6 +13,20 @@ Built for the OpenServ SERV Hackathon, Edition 02 (Kite track).
 - [**Reins demo**](demo/reins-demo.mp4) (2:13): learning habits from a statement, the habit switchboard, asking SERV, approving, x402 payments on Kite with KiteScan receipts, Safe Mode and autopilot.
 - [**Kite Agent Passport update**](demo/reins-kite-passport-update.mp4) (2:05): funding by deposit address, setting a Passport allowance with a passkey, per-habit limits inside it, fast-forwarding a week, and connecting a wallet read-only.
 
+## Add Reins to your Home Screen
+
+Reins works like an app on your phone, with no download or app store.
+
+**iPhone or iPad (Safari):**
+1. Open [reins-zeta.vercel.app](https://reins-zeta.vercel.app) in Safari.
+2. Tap the **Share** button (the square with an arrow pointing up).
+3. Scroll down and tap **Add to Home Screen**, then **Add**.
+4. Open Reins from its horse icon: it runs full screen, like an app.
+
+**Android (Chrome):** open the site, tap the **⋮** menu, then **Add to Home screen** (or **Install app**).
+
+On iPhone, Reins shows a small reminder with these steps the first time you visit in Safari.
+
 ## What it does
 
 1. **Learns your habits.** Upload a bank statement (CSV) or connect a wallet read-only. Reins finds your recurring spending: what, how much, which day and the usual time ("Coffee: about $4.13 most weekdays at 8:10 am").

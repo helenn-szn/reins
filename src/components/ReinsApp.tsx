@@ -355,15 +355,19 @@ export default function ReinsApp() {
 
   if (!hasData) {
     return (
-      <Landing busy={busy} error={error}
-        onCsv={(csv) => run("Reading your statement…", () => loadStatement(csv))}
-        onBrowserWallet={() => run("Waiting for MetaMask…", async () => loadWallet(await browserWalletAddress()))}
-        onWallet={(address) => run("Reading your wallet's payments…", () => loadWallet(address))} />
+      <>
+        <Landing busy={busy} error={error}
+          onCsv={(csv) => run("Reading your statement…", () => loadStatement(csv))}
+          onBrowserWallet={() => run("Waiting for MetaMask…", async () => loadWallet(await browserWalletAddress()))}
+          onWallet={(address) => run("Reading your wallet's payments…", () => loadWallet(address))} />
+        <HomeScreenHint />
+      </>
     );
   }
 
   return (
     <div className="min-h-screen lg:flex">
+      <HomeScreenHint />
       {/* Sidebar */}
       <aside className="hidden bg-[#1c1917] text-[#d6d3d1] lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col lg:px-4 lg:py-6">
         <div className="flex items-center gap-3 px-2">
@@ -815,6 +819,43 @@ async function browserWalletAddress(): Promise<string> {
 
 type Page = "dashboard" | "approvals" | "activity" | "shops" | "settings";
 
+
+// On an iPhone or iPad in the browser, a small tip on adding Reins to the home screen.
+// Hidden once Reins runs from the home screen, or after the visitor closes it.
+function HomeScreenHint() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    try {
+      const ua = navigator.userAgent;
+      const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const standalone = (navigator as unknown as { standalone?: boolean }).standalone || matchMedia("(display-mode: standalone)").matches;
+      if (ios && !standalone && !localStorage.getItem("reins-hide-a2hs")) {
+        const t = setTimeout(() => setShow(true), 1500);
+        return () => clearTimeout(t);
+      }
+    } catch { /* storage unavailable */ }
+  }, []);
+  if (!show) return null;
+  const close = () => { setShow(false); try { localStorage.setItem("reins-hide-a2hs", "1"); } catch { /* ignore */ } };
+  return (
+    <div role="dialog" aria-label="Add Reins to your Home Screen" className="fixed inset-x-3 bottom-3 z-40 rounded-2xl bg-[#1c1917] p-4 text-[#f5f5f4] shadow-2xl ring-1 ring-white/10 sm:left-auto sm:right-4 sm:w-96">
+      <div className="flex items-start gap-3">
+        <Logo size={40} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">Add Reins to your Home Screen</p>
+          <p className="mt-1 text-xs text-[#d6d3d1]">
+            Tap <span className="inline-flex translate-y-0.5 items-center" aria-label="Share">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M6 11v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8" /></svg>
+            </span> Share in Safari, then <span className="font-medium text-[#fafaf9]">Add to Home Screen</span>. Reins opens like an app, full screen.
+          </p>
+        </div>
+        <button onClick={close} aria-label="Close" className="-mr-1 -mt-1 rounded-lg p-1 text-[#a8a29e] hover:text-[#fafaf9]">
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Landing({ onCsv, onWallet, onBrowserWallet, busy, error }: { onCsv: (csv: string) => void; onWallet: (address: string) => void; onBrowserWallet: () => void; busy: string | null; error: string | null }) {
   const [address, setAddress] = useState("");
