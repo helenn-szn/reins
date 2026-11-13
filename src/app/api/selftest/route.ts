@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   }
   const post = async <T,>(path: string, body: unknown): Promise<T> => {
     const t = Date.now();
-    const r = await fetch(`${origin}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(`${origin}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-reins-owner": process.env.KITE_TEST_KEY! }, body: JSON.stringify(body) });
     const j = await r.json();
     steps.push({ path, ms: Date.now() - t, status: r.status });
     if (!r.ok) throw new Error(`${path}: ${j.error ?? r.status}`);
@@ -37,6 +37,19 @@ export async function GET(req: Request) {
   };
   const steps: { path: string; ms: number; status: number }[] = [];
   const out: Record<string, unknown> = { steps };
+
+  // ?visitor=1 : a brand-new visitor wallet gets starter money, then buys a coffee from its own wallet
+  if (url.searchParams.get("visitor")) {
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const h = { "content-type": "application/json", "x-reins-wallet": id };
+    const st = await fetch(`${origin}/api/status`, { headers: h }).then((r) => r.json());
+    const starter = await fetch(`${origin}/api/wallet/starter`, { method: "POST", headers: h }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
+    const pay = starter.status === 200
+      ? await fetch(`${origin}/api/pay`, { method: "POST", headers: h, body: JSON.stringify({ merchant: "Reins Coffee", amount: 4.13, date: new Date().toISOString().slice(0, 10), category: "coffee", memo: "Visitor test coffee" }) })
+          .then(async (r) => ({ status: r.status, ...(await r.json()) }))
+      : null;
+    return Response.json({ visitorWallet: st.agent, owner: st.owner, starter, pay });
+  }
 
   // ?address=0x… only checks what Reins learns from that wallet's on-chain history
   const address = url.searchParams.get("address");

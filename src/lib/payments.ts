@@ -15,6 +15,7 @@ export type PayInput = {
   memo?: string;
   category?: string; // habit category, used to pick the shop
   origin?: string; // where the demo shops live (this app's own URL)
+  agentKey?: Hex; // which Reins wallet pays (the visitor's own); server-side only, never from the browser
 };
 
 export interface PaymentProvider {
@@ -41,7 +42,7 @@ export class KitePaymentProvider implements PaymentProvider {
   name = "kite" as const;
 
   async pay(input: PayInput): Promise<Payment> {
-    const key = process.env.KITE_AGENT_PRIVATE_KEY as Hex | undefined;
+    const key = input.agentKey ?? (process.env.KITE_AGENT_PRIVATE_KEY as Hex | undefined);
     if (!key) throw new Error("Kite payments need KITE_AGENT_PRIVATE_KEY (the Reins agent wallet).");
     if (!input.origin) throw new Error("Shop address missing.");
 
@@ -67,7 +68,9 @@ export class KitePaymentProvider implements PaymentProvider {
       pub.readContract({ address: WALLET_TOKEN, abi: erc20Abi, functionName: "balanceOf", args: [account.address] }),
       pub.readContract({ address: WALLET_TOKEN, abi: erc20Abi, functionName: "symbol" }),
     ]);
-    if (balance < price) throw new Error(`The Reins agent wallet has ${formatUnits(balance, decimals)} ${symbol}, not enough for this. Top it up from the Kite faucet.`);
+    if (balance < price) throw new Error(`Your Reins wallet has ${formatUnits(balance, decimals)} ${symbol}, not enough for this. Add funds first.`);
+    const gas = await pub.getBalance({ address: account.address });
+    if (gas === BigInt(0)) throw new Error("Your Reins wallet has no KITE to pay the network fee. Add a little KITE, or use Get free test money.");
 
     // 3. Pay on Kite
     const wallet = createWalletClient({ account, chain: kiteTestnet, transport: http() });

@@ -67,8 +67,22 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const uid = () => crypto.randomUUID();
 
+// Each browser has its own Reins wallet on Kite testnet, named by a random id kept here. The owner's
+// browser also keeps the owner key (from their private ?owner= link) and uses the original wallet.
+function walletHeaders(): Record<string, string> {
+  try {
+    let id = localStorage.getItem("reins-wallet-id");
+    if (!id) {
+      id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem("reins-wallet-id", id);
+    }
+    const owner = localStorage.getItem("reins-owner-key");
+    return { "x-reins-wallet": id, ...(owner ? { "x-reins-owner": owner } : {}) };
+  } catch { return {}; }
+}
+
 async function post<T>(url: string, body: unknown): Promise<T> {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...walletHeaders() }, body: JSON.stringify(body) });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error ?? "Request failed");
   return data as T;
@@ -79,7 +93,7 @@ export default function ReinsApp() {
   const ref = useRef<AppState>(INITIAL);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; shopPayTo?: string; payScale?: number; token?: string; tokenDecimals?: number } | null>(null);
+  const [status, setStatus] = useState<{ serv: { mode: string; model?: string }; payments: string; agent?: string | null; owner?: boolean; shopPayTo?: string; payScale?: number; token?: string; tokenDecimals?: number } | null>(null);
   const [fundOpen, setFundOpen] = useState(false);
   const [agentWallet, setAgentWallet] = useState<{ balance: number; symbol: string; gas: number } | null>(null);
   const [shopWallet, setShopWallet] = useState<{ balance: number; symbol: string } | null>(null);
@@ -123,7 +137,12 @@ export default function ReinsApp() {
         ref.current = st; setS(st);
       }
     } catch { /* ignore */ }
-    fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => {});
+    // The owner link (?owner=…) marks this browser as the owner's; remember it, then tidy the address bar
+    try {
+      const u = new URL(window.location.href), k = u.searchParams.get("owner");
+      if (k) { localStorage.setItem("reins-owner-key", k); u.searchParams.delete("owner"); window.history.replaceState(null, "", u.toString()); }
+    } catch { /* storage unavailable */ }
+    fetch("/api/status", { headers: walletHeaders() }).then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
 
   // In live Kite mode, show what's in the Reins agent wallet (the spending pot on-chain)
@@ -547,7 +566,7 @@ export default function ReinsApp() {
                   </>)}
                   {status?.payments === "kite" && status.agent && (
                     <p className="mt-2 text-xs text-stone-500">
-                      Pays on Kite testnet from{" "}
+                      {status.owner ? "Your owner wallet" : "Your own Reins wallet"} on Kite testnet:{" "}
                       <a className="underline" href={`https://testnet.kitescan.ai/address/${status.agent}`} target="_blank" rel="noreferrer">{shortAddr(status.agent)}</a>
                       {agentWallet ? ` (${agentWallet.balance.toFixed(2)} ${agentWallet.symbol})` : ""}.
                       {status.payScale && status.payScale !== 1 ? ` Test payments are 1/${Math.round(1 / status.payScale)} of the price.` : ""}
@@ -740,7 +759,7 @@ export default function ReinsApp() {
       </div>
 
       {fundOpen && status?.agent && (
-        <AddMoneyDialog address={status.agent} payScale={status.payScale || 1} onClose={() => setFundOpen(false)} onReceived={readAgentWallet} />
+        <AddMoneyDialog address={status.agent} owner={!!status.owner} payScale={status.payScale || 1} onClose={() => setFundOpen(false)} onReceived={readAgentWallet} />
       )}
 
       {walletOpen && (
@@ -995,7 +1014,16 @@ const NETWORKS = [
   { name: "KiteAI Testnet", live: true },
   { name: "Base" }, { name: "Solana" }, { name: "Polygon" }, { name: "Avalanche" }, { name: "Card" },
 ];
-function AddMoneyDialog({ address, payScale, onClose, onReceived }: { address: string; payScale: number; onClose: () => void; onReceived: () => void }) {
+function AddMoneyDialog({ address, owner, payScale, onClose, onReceived }: { address: string; owner: boolean; payScale: number; onClose: () => void; onReceived: () => void }) {
+  const [starter, setStarter] = useState<"idle" | "sending" | "done" | string>("idle");
+  const getStarter = async () => {
+    setStarter("sending");
+    try {
+      const r = await fetch("/api/wallet/starter", { method: "POST", headers: walletHeaders() });
+      const j = await r.json();
+      setStarter(r.ok ? "done" : j.error || "Couldn't send starter money.");
+    } catch { setStarter("Couldn't send starter money."); }
+  };
   const [qr, setQr] = useState("");
   const [copied, setCopied] = useState(false);
   const [received, setReceived] = useState<{ amount: number; symbol: string } | null>(null);
@@ -1029,7 +1057,16 @@ function AddMoneyDialog({ address, payScale, onClose, onReceived }: { address: s
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 px-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Add money" className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-semibold">Add funds to your Kite Passport</h2>
-        <p className="mt-1 text-sm text-stone-500">Send {symbol} from any wallet to this address. Reins only spends what you put here, and never pulls from your own wallet.</p>
+        <p className="mt-1 text-sm text-stone-500">This is your own Reins wallet. Send {symbol} from any wallet to this address. Reins only spends what you put here, and never pulls from your own wallet.</p>
+        {!owner && (
+          <div className="mt-3 rounded-xl bg-brand-50 p-3 text-sm">
+            <p className="text-stone-700">New here? Get free test money to try Reins: {symbol} to spend plus a little KITE for network fees.</p>
+            <Button className="mt-2" disabled={starter === "sending" || starter === "done"} onClick={getStarter}>
+              {starter === "sending" ? "Sending…" : starter === "done" ? "Sent" : "Get free test money"}
+            </Button>
+            {starter !== "idle" && starter !== "sending" && starter !== "done" && <p className="mt-1.5 text-xs text-red-700">{starter}</p>}
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Network">
           {NETWORKS.map((n) => (
