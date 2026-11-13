@@ -512,23 +512,27 @@ export default function ReinsApp() {
                     <span className="text-sm font-medium">Kite Passport</span>
                     {status?.payments !== "passport" && <Chip tone="muted">demo</Chip>}
                   </div>
-                  <Stat label="Balance" value={usd(s.potBalance)} />
-                  {status?.payments === "passport" ? (
-                    <p className="mt-1 text-xs text-stone-500">Allowance: set in your Passport dashboard. Kite refuses anything over it.</p>
-                  ) : s.passportDemo?.on ? (
-                    <div className="mt-2">
-                      <div className="flex items-baseline justify-between text-sm">
-                        <span className="text-stone-500">Allowance left</span>
-                        <span className="font-medium">{usd(allowanceLeft(s.passportDemo, s.today))} <span className="font-normal text-stone-500">of {usd(s.passportDemo.amount)}</span></span>
-                      </div>
-                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
-                        <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (allowanceLeft(s.passportDemo, s.today) / s.passportDemo.amount) * 100)}%` }} />
-                      </div>
-                      <p className="mt-1 text-xs text-stone-500">Resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}. Kite refuses anything over it.</p>
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-xs text-stone-500">No allowance yet. Set one so Kite holds every payment to it.</p>
-                  )}
+                  {(() => {
+                    // One number: what Reins can spend now = the lower of the money in the Passport and the allowance left
+                    const allowance = status?.payments !== "passport" && s.passportDemo?.on ? allowanceLeft(s.passportDemo, s.today) : null;
+                    const canSpend = allowance === null ? s.potBalance : Math.min(s.potBalance, allowance);
+                    const limitedBy = allowance === null ? null : s.potBalance < allowance ? "balance" : "allowance";
+                    return (<>
+                      <Stat label="Reins can spend" value={usd(canSpend)} />
+                      {allowance !== null && s.passportDemo && (
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
+                          <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (canSpend / s.passportDemo.amount) * 100)}%` }} />
+                        </div>
+                      )}
+                      <p className="mt-1.5 text-xs text-stone-500">
+                        {status?.payments === "passport" ? <>Balance {usd(s.potBalance)} · allowance set in your Passport dashboard.</>
+                          : allowance !== null && s.passportDemo ? <>
+                            Balance {usd(s.potBalance)} · allowance {usd(allowance)} of {usd(s.passportDemo.amount)} left, resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}.
+                            {limitedBy === "balance" && <span className="text-brand-700"> Add funds to use your full allowance.</span>}
+                          </> : <>Balance {usd(s.potBalance)}. No allowance yet: set one so Kite holds every payment to it.</>}
+                      </p>
+                    </>);
+                  })()}
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     {status?.payments === "passport" ? (<>
                       <a className="rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds</a>
