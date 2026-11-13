@@ -2,10 +2,11 @@ import { createWalletClient, createPublicClient, erc20Abi, http, formatUnits, ty
 import { privateKeyToAccount } from "viem/accounts";
 import type { Payment } from "./types";
 import { kiteTestnet, WALLET_TOKEN } from "./wallet";
-import { encodePayment, EXPLORER, onchainAmount, SHOPS, shopFor, type PaymentTerms } from "./shops";
+import { encodePayment, EXPLORER, onchainAmount, SHOPS, SHOP_PAY_TO, shopFor, type PaymentTerms } from "./shops";
+import { passportSend } from "./passport";
 
 // Payments go through one interface so the app works the same with fake payments
-// and real payments on Kite. Switch with PAYMENTS_MODE=mock|kite.
+// and real payments on Kite. Switch with PAYMENTS_MODE=mock|kite|passport.
 
 export type PayInput = {
   merchant: string;
@@ -95,10 +96,33 @@ export class KitePaymentProvider implements PaymentProvider {
   }
 }
 
-export const paymentsMode = () => (process.env.PAYMENTS_MODE === "kite" ? "kite" : "mock");
+// Real payments through the user's Kite Agent Passport. Kite checks each one against the
+// spending allowance the user set in the Passport dashboard, and refuses anything over it.
+class PassportPaymentProvider implements PaymentProvider {
+  name = "passport" as const;
+  async pay(input: PayInput): Promise<Payment> {
+    const shop = shopFor(input.category, `${input.merchant} ${input.memo ?? ""}`);
+    const amount = onchainAmount(input.amount);
+    let sent;
+    try {
+      sent = await passportSend(SHOP_PAY_TO, amount);
+    } catch (e) {
+      throw new Error(`Kite Passport didn't pay: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return {
+      id: crypto.randomUUID(), date: input.date, merchant: input.merchant, amount: input.amount, status: "paid",
+      txHash: sent.hash, provider: "passport", shop: SHOPS[shop].name,
+      onchain: `${amount} USDC`, explorerUrl: sent.hash ? `https://basescan.org/tx/${sent.hash}` : undefined,
+    };
+  }
+}
+
+export const paymentsMode = (): Payment["provider"] =>
+  process.env.PAYMENTS_MODE === "kite" ? "kite" : process.env.PAYMENTS_MODE === "passport" ? "passport" : "mock";
 
 export function getPaymentProvider(): PaymentProvider {
-  return paymentsMode() === "kite" ? new KitePaymentProvider() : new MockPaymentProvider();
+  const m = paymentsMode();
+  return m === "kite" ? new KitePaymentProvider() : m === "passport" ? new PassportPaymentProvider() : new MockPaymentProvider();
 }
 
 // The Reins agent wallet (spending pot on Kite), for showing its balance

@@ -8,6 +8,7 @@ export async function GET() {
   return Response.json({
     serv: servConfigured() ? { mode: "live", model: servModel() } : { mode: "mock" },
     payments: mode,
+    ...(mode === "passport" ? { shopPayTo: SHOP_PAY_TO, payScale: PAY_SCALE } : {}),
     ...(mode === "kite" ? { agent: agentAddress(), shopPayTo: SHOP_PAY_TO, payScale: PAY_SCALE, token: WALLET_TOKEN, tokenDecimals: await tokenDecimals().catch(() => 18) } : {}),
   });
 }

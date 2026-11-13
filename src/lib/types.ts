@@ -64,7 +64,7 @@ export type Payment = {
   amount: number;
   status: "paid" | "failed";
   txHash?: string;
-  provider: "mock" | "kite";
+  provider: "mock" | "kite" | "passport";
   shop?: string; // the demo shop that was paid (kite mode)
   explorerUrl?: string; // the payment on KiteScan
   orderId?: string;

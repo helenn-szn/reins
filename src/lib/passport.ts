@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
 
 // Kite Agent Passport, through Kite's `kpass` CLI on the computer running Reins.
-// Reins turns its own limits into a Passport spending session (per-payment cap, total budget,
-// time window). The user approves it once with their passkey, and from then on Kite enforces
-// those limits. Passport is production-only and needs the user's own kpass login, so this only
-// works when Reins runs on the user's computer (npm run dev), not on the hosted site.
+// With PAYMENTS_MODE=passport, Reins pays from the user's Passport wallet and Kite enforces the
+// limit: the spending allowance the user set once in the Passport dashboard. Passport is
+// production-only (real USDC) and needs the user's own kpass login, so it only works when Reins
+// runs on the user's computer (npm run dev), not on the hosted site.
 
 const BIN = process.env.KPASS_BIN || "kpass";
-export const passportEnabled = () => process.env.PASSPORT_MODE === "on";
+export const passportEnabled = () => process.env.PAYMENTS_MODE === "passport";
+export const PASSPORT_DASHBOARD = "https://agentpassport.ai/overview";
 
 type Json = Record<string, unknown>;
 
@@ -68,4 +69,22 @@ export function sessionState(status?: string): "pending" | "active" | "ended" {
   if (/reject|deni|declin|disapprov|expir|cancel|revok|fail/.test(status)) return "ended";
   if (/^(approved|active|granted|authori[sz]ed)$|approved|activ/.test(status)) return "active";
   return "pending";
+}
+
+// USDC balance of the Passport wallet. kpass's balance shape isn't published, so take the USDC
+// entry if there is one, else the first number under a balance-like name.
+export function readBalance(j: Json): number | null {
+  const usdc = find(j, (k, v) => /usdc/i.test(k) && (typeof v === "number" || (typeof v === "string" && /^\d+(\.\d+)?$/.test(v))));
+  const any = usdc ?? find(j, (k, v) => /balance|available|amount/i.test(k) && (typeof v === "number" || (typeof v === "string" && /^\d+(\.\d+)?$/.test(v))));
+  const n = Number(any);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Pay through Passport: a direct USDC send that Kite checks against the user's allowance
+export async function passportSend(to: string, amount: number) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(to)) throw new Error("Bad shop address.");
+  const amt = amount.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  const j = await kpass(["wallet", "send", "--to", to, "--amount", amt, "--asset", "USDC"], 90_000);
+  const hash = find(j, (k, v) => typeof v === "string" && /^0x[0-9a-fA-F]{64}$/.test(v)) as string | undefined;
+  return { hash, hint: pick.hint(j), raw: j };
 }

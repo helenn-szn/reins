@@ -46,15 +46,11 @@ Four demo shops (Reins Coffee, Rides, Eats and Store) live at `/api/shops/[shop]
 
 ## Kite Agent Passport
 
-Reins can hand its spending limits to **Kite Agent Passport**. In Settings, you set a per-payment limit, a total budget and a time window, and Reins creates a Passport spending session with them through Kite's `kpass` app. You approve it once with your passkey. From then on, Kite holds the limits: anything above them is refused, and Reins' own per-habit limits step aside while the session is active.
+With Kite Agent Passport, you set one spending allowance (up to $100 a week, every 2 weeks or a month), approve it with your passkey, and Kite checks every payment your agents make against it. In Reins, the allowance is the limit: per-habit limits step aside, and anything over what's left is refused ("Kite Passport refused it: $15.00 is more than the $1.74 left of your $10.00 allowance per week").
 
-Passport is production-only and signs in with your own email and passkey, so this works when Reins runs on your computer, not on the hosted demo:
+**Demo (works everywhere):** Settings → Kite Agent Passport → set an amount and period → Approve allowance → Use passkey. This simulates the Passport allowance, so you can see how it works without real USDC; payments still run on Kite testnet. The dashboard shows what's left and when it resets.
 
-1. Install `kpass` and sign up, following [Kite's Passport guide](https://docs.gokite.ai/passport/install).
-2. In `.env.local`, set `PASSPORT_MODE=on` (and `KPASS_BIN` if `kpass` isn't on your PATH).
-3. Run `npm run dev`, switch on some habits, then go to **Settings → Kite Agent Passport → Create Passport session** and approve it.
-
-Approving sets a real USDC budget on your Passport. In this demo, payments themselves still run on Kite testnet from the Reins agent wallet; paying through the Passport session itself is the next step.
+**Real Passport (your own computer):** with Kite's `kpass` app installed and signed in, set `PAYMENTS_MODE=passport` in `.env.local` and run `npm run dev`. Reins then pays from your Passport wallet with `kpass wallet send`, and Kite enforces the allowance you set in the [Passport dashboard](https://agentpassport.ai/overview). This moves real USDC (at the demo's 1/100 scale, about 4 cents per coffee).
 
 ## Run it locally
 
@@ -93,7 +89,7 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS v4 and viem.
 
 ## Honest limits and what's next
 
-- **One shared demo pot.** Everyone trying the demo spends from the same agent wallet. Reins can already create a Kite Agent Passport session with your limits (see above); next, payments go through that session, so Kite signs and enforces every one.
+- **One shared demo pot.** Everyone trying the demo spends from the same agent wallet. Reins can already pay through a real Kite Agent Passport on your own computer, and the hosted demo simulates the Passport allowance (see above). Next: Passport payments on the hosted app, so every user's allowance is enforced by Kite.
 - **Funding.** Today you deposit test USDT on Kite. Next: automatic top-ups within a weekly cap, deposits from other chains (Passport already offers deposit addresses on Base, Solana, Polygon, Avalanche and more), and card or bank top-ups for people who don't hold crypto.
 - **Real merchants.** Uber, airlines and food apps don't accept agent payments yet, so the demo uses x402 shops. Reins works with any merchant that accepts x402.
 - **Your data stays in your browser.** There are no accounts yet, so Reins only runs while the page is open. Next: sign-in, so it can pay on schedule with the browser closed.

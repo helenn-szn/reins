@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Decision, EngineState, Habit, LogEntry, Mode, Payment, PurchaseRequest } from "@/lib/types";
 import { describeCadence, describeLimit } from "@/lib/habits";
 import { isDue, periodKey, safeModeStatus, TRUST_LADDER_STEPS } from "@/lib/engine";
-import { addDays, pretty } from "@/lib/dates";
+import { addDays, daysBetween, pretty } from "@/lib/dates";
 import { SHOPS } from "@/lib/shopsInfo";
 import QRCode from "qrcode";
 
@@ -25,22 +25,27 @@ type AppState = {
   spent: Record<string, number>;
   log: LogEntry[];
   forceSafeMode: boolean;
-  passport?: PassportSession;
+  passportDemo?: PassportAllowance;
 };
 
-// A Kite Agent Passport spending session created from Reins' limits (see src/lib/passport.ts)
-type PassportSession = {
-  requestId?: string; approvalUrl?: string; hint?: string; state: "pending" | "active" | "ended";
-  maxPerTx: number; maxTotal: number; ttl: string; createdAt: number; spent: number;
-};
-const TTL_HOURS: Record<string, number> = { "24h": 24, "72h": 72, "168h": 168 };
-const passportLive = (p?: PassportSession) => !!p && p.state === "active" && Date.now() < p.createdAt + (TTL_HOURS[p.ttl] ?? 24) * 3600_000;
-// Kite's limits always win: Reins refuses anything the Passport session wouldn't allow
-function passportBlock(p: PassportSession | undefined, amount: number): string | null {
-  if (!passportLive(p)) return null;
-  if (amount > p!.maxPerTx) return `Kite Passport refused it: over your ${usd(p!.maxPerTx)} per-payment limit.`;
-  if (p!.spent + amount > p!.maxTotal) return `Kite Passport refused it: only ${usd(Math.max(0, p!.maxTotal - p!.spent))} left of your ${usd(p!.maxTotal)} budget.`;
-  return null;
+// Demo of Kite Agent Passport's allowance: an amount per week, two weeks or month, approved once
+// with a passkey, that every agent payment must fit inside. Simulated so it runs anywhere with no
+// real USDC; the real thing runs through kpass (PAYMENTS_MODE=passport, see src/lib/passport.ts).
+type PassportAllowance = { amount: number; period: "week" | "2weeks" | "month"; start: string; spent: Record<string, number>; on: boolean };
+const PERIOD_DAYS = { week: 7, "2weeks": 14, month: 30 } as const;
+const PERIOD_LABEL = { week: "per week", "2weeks": "every 2 weeks", month: "per month" } as const;
+function allowanceWindow(a: PassportAllowance, today: string) {
+  const n = Math.max(0, Math.floor(daysBetween(a.start, today) / PERIOD_DAYS[a.period]));
+  const from = addDays(a.start, n * PERIOD_DAYS[a.period]);
+  return { key: from, resets: addDays(from, PERIOD_DAYS[a.period]) };
+}
+function allowanceLeft(a: PassportAllowance, today: string) {
+  return Math.max(0, Math.round((a.amount - (a.spent[allowanceWindow(a, today).key] ?? 0)) * 100) / 100);
+}
+function allowanceRefusal(a: PassportAllowance | undefined, today: string, amount: number): string | null {
+  if (!a?.on) return null;
+  const left = allowanceLeft(a, today);
+  return amount > left ? `Kite Passport refused it: ${usd(amount)} is more than the ${usd(left)} left of your ${usd(a.amount)} allowance ${PERIOD_LABEL[a.period]}.` : null;
 }
 
 const INITIAL: AppState = {
@@ -141,7 +146,7 @@ export default function ReinsApp() {
   const walletBalance = (st: AppState) => (st.useDemoBalance || !st.walletRead ? st.demoBalance : Math.round((st.walletRead.balance / liveScale) * 100) / 100);
   const engineState = (st: AppState): EngineState => ({
     today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st),
-    passportLimits: passportLive(st.passport),
+    passportLimits: status?.payments === "passport" || !!st.passportDemo?.on,
     safetyFloor: st.safetyFloor, potBalance: st.potBalance, onDemandAutoLimit: st.onDemandAutoLimit, spent: st.spent, forceSafeMode: st.forceSafeMode,
   });
   const safe = s.today ? safeModeStatus(engineState(s)) : null;
@@ -187,7 +192,10 @@ export default function ReinsApp() {
           ...p,
           potBalance: Math.round((p.potBalance - entry.request.amount) * 100) / 100,
           spent: key ? { ...p.spent, [key]: (p.spent[key] ?? 0) + entry.request.amount } : p.spent,
-          passport: passportLive(p.passport) ? { ...p.passport!, spent: Math.round((p.passport!.spent + entry.request.amount) * 100) / 100 } : p.passport,
+          passportDemo: p.passportDemo?.on ? (() => {
+            const k = allowanceWindow(p.passportDemo!, entry.request.date).key;
+            return { ...p.passportDemo!, spent: { ...p.passportDemo!.spent, [k]: Math.round(((p.passportDemo!.spent[k] ?? 0) + entry.request.amount) * 100) / 100 } };
+          })() : p.passportDemo,
           log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "paid", payment } : l)),
         };
       });
@@ -198,8 +206,8 @@ export default function ReinsApp() {
 
   async function processRequest(req: PurchaseRequest) {
     let decision = await post<Decision>("/api/decide", { request: req, state: engineState(ref.current) });
-    const pb = decision.action !== "block" ? passportBlock(ref.current.passport, req.amount) : null;
-    if (pb) decision = { ...decision, action: "block", reason: pb, source: "rules" };
+    const refused = decision.action !== "block" ? allowanceRefusal(ref.current.passportDemo, req.date, req.amount) : null;
+    if (refused) decision = { ...decision, action: "block", reason: refused, source: "rules" };
     const entry: LogEntry = {
       id: uid(), date: req.date, request: req, decision,
       outcome: decision.action === "allow" ? "paying" : decision.action === "ask" ? "waiting" : "blocked",
@@ -225,8 +233,8 @@ export default function ReinsApp() {
 
   async function approve(entry: LogEntry) {
     if (entry.request.amount > ref.current.potBalance) { setError("Not enough in your spending pot. Top it up first."); return; }
-    const pb = passportBlock(ref.current.passport, entry.request.amount);
-    if (pb) { setError(pb); return; }
+    const refused = allowanceRefusal(ref.current.passportDemo, entry.request.date, entry.request.amount);
+    if (refused) { setError(refused); return; }
     update((p) => ({ ...p, log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "paying" } : l)) }));
     await pay(entry);
     if (entry.request.habitId) {
@@ -496,12 +504,19 @@ export default function ReinsApp() {
                     {safe.auto ? "Below" : "Safe Mode switches on below"} {usd(safe.needed)}: bills due in 2 weeks ({usd(safe.upcoming.total)}) plus your {usd(s.safetyFloor)} floor.
                   </p>
                 )}
-                {passportLive(s.passport) && (
+                {s.passportDemo?.on && status?.payments !== "passport" && (
                   <p className="mt-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-stone-700">
-                    <span className="font-medium">Limits by Kite Passport</span>: {usd(s.passport!.maxPerTx)} per payment, {usd(s.passport!.maxTotal - s.passport!.spent)} of {usd(s.passport!.maxTotal)} left.
+                    <span className="font-medium">Kite Passport allowance (demo)</span>: {usd(allowanceLeft(s.passportDemo, s.today))} of {usd(s.passportDemo.amount)} left, resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}.
                   </p>
                 )}
-                {status?.payments === "kite" && status.agent ? (
+                {status?.payments === "passport" ? (
+                  <>
+                    <p className="mt-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-stone-700">
+                      <span className="font-medium">Paid by Kite Agent Passport.</span> Kite enforces your spending allowance on every payment.
+                    </p>
+                    <a className="mt-4 block w-full rounded-xl border border-stone-300 px-4 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds or change allowance in Passport</a>
+                  </>
+                ) : status?.payments === "kite" && status.agent ? (
                   <Button className="mt-4 w-full" variant="secondary" onClick={() => setFundOpen(true)}>Add money to spending pot</Button>
                 ) : (
                   <Button className="mt-4 w-full" variant="secondary" onClick={() => topUp(40)}>Move $40 to spending pot</Button>
@@ -536,7 +551,7 @@ export default function ReinsApp() {
                     {h.enabled && (
                       <div className="flex items-center gap-2 text-xs">
                         {h.autopilot ? <Chip tone="good">autopilot</Chip> : s.mode === "trust_ladder" && <Chip tone="muted">{h.approvalsInARow}/{TRUST_LADDER_STEPS}</Chip>}
-                        {passportLive(s.passport) ? <span className="text-xs text-stone-500">limit set by Kite Passport</span> : (<>
+                        {status?.payments === "passport" || s.passportDemo?.on ? <span className="text-xs text-stone-500">limit set by Kite Passport</span> : (<>
                         <span className="text-stone-500">limit $</span>
                         <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right" value={h.capPerPurchase}
                           onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} />
@@ -597,8 +612,10 @@ export default function ReinsApp() {
                       </div>
                     </div>
                     <p className="text-xs text-stone-500">{l.request.description ? `“${l.request.description}” · ` : ""}{l.decision.reason}</p>
-                    {l.payment?.explorerUrl ? (
-                      <p className="mt-0.5 text-[11px] text-stone-500">Paid {l.payment.shop} {l.payment.onchain} on Kite ·{" "}
+                    {l.payment?.provider === "passport" && !l.payment.explorerUrl ? (
+                      <p className="mt-0.5 text-[11px] text-stone-500">Paid {l.payment.shop} {l.payment.onchain} through Kite Passport</p>
+                    ) : l.payment?.explorerUrl ? (
+                      <p className="mt-0.5 text-[11px] text-stone-500">Paid {l.payment.shop} {l.payment.onchain} {l.payment.provider === "passport" ? "through Kite Passport" : "on Kite"} ·{" "}
                         <a className="font-mono underline" href={l.payment.explorerUrl} target="_blank" rel="noreferrer">{l.payment.txHash?.slice(0, 12)}…</a></p>
                     ) : l.payment?.txHash && <p className="mt-0.5 font-mono text-[11px] text-stone-400">demo payment {l.payment.txHash.slice(0, 12)}…</p>}
                   </li>
@@ -610,15 +627,18 @@ export default function ReinsApp() {
 
         {page === "shops" && (
           <ShopsPage
-            orders={s.log.filter((l) => l.outcome === "paid" && l.payment?.provider === "kite" && l.payment.shop)}
-            live={status?.payments === "kite"} shopPayTo={status?.shopPayTo} shopWallet={shopWallet} payScale={status?.payScale}
+            orders={s.log.filter((l) => l.outcome === "paid" && (l.payment?.provider === "kite" || l.payment?.provider === "passport") && l.payment.shop)}
+            live={status?.payments === "kite" || status?.payments === "passport"} shopPayTo={status?.shopPayTo} shopWallet={shopWallet} payScale={status?.payScale}
             onRefresh={readAgentWallet} onTry={() => { setRequest("Buy my usual coffee"); go("dashboard"); }} />
         )}
 
         {page === "settings" && (
           <div className="grid max-w-3xl gap-4">
-            <PassportCard habits={s.habits} onDemandLimit={s.onDemandAutoLimit} session={s.passport}
-              onChange={(passport) => update((p) => ({ ...p, passport }))} />
+            {status?.payments !== "passport" && (
+              <PassportDemoCard allowance={s.passportDemo} today={s.today} onChange={(passportDemo) => update((p) => ({ ...p, passportDemo }))} />
+            )}
+            {status?.payments === "passport" && <PassportCard live={status?.payments === "passport"} payScale={status?.payScale}
+              onBalance={(usdc) => update((p) => { const pot = Math.round((usdc / (status?.payScale || 1)) * 100) / 100; return p.potBalance === pot ? p : { ...p, potBalance: pot }; })} />}
 
             <Card title="Appearance">
               <div className="divide-y divide-stone-100">
@@ -650,7 +670,7 @@ export default function ReinsApp() {
                 {s.habits.filter((h) => h.enabled).map((h) => (
                   <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
                     <span>{h.name}</span>
-                    {passportLive(s.passport) ? <span className="text-xs text-stone-500">set by Kite Passport</span> : <span className="flex items-center gap-2 text-xs text-stone-500">
+                    {status?.payments === "passport" || s.passportDemo?.on ? <span className="text-xs text-stone-500">set by Kite Passport</span> : <span className="flex items-center gap-2 text-xs text-stone-500">
                       limit $
                       <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right text-stone-900" value={h.capPerPurchase}
                         onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} aria-label={`${h.name} limit`} />
@@ -837,111 +857,109 @@ function HorseBackdrop() {
   );
 }
 
-// Kite Agent Passport: turn Reins' limits into a Passport spending session the user approves with their passkey
-function suggestedPassportLimits(habits: Habit[], onDemandLimit: number, ttl: string) {
-  const days = (TTL_HOURS[ttl] ?? 24) / 24;
-  const on = habits.filter((h) => h.enabled);
-  const perTx = Math.max(onDemandLimit, ...on.map((h) => h.capPerPurchase), 1);
-  const times = (h: Habit) => {
-    const c = h.cadence;
-    if (c.type === "weekdays") return Math.max(1, Math.round(days * 5 / 7));
-    if (c.type === "weekly") return Math.max(1, Math.round(days / 7));
-    if (c.type === "monthly") return 1;
-    return Math.max(1, Math.ceil((c.perWeek * days) / 7));
+// Demo of Kite Agent Passport's allowance, modelled on the Passport dashboard's "Set up allowance"
+function PassportDemoCard({ allowance, today, onChange }: { allowance?: PassportAllowance; today: string; onChange: (a: PassportAllowance | undefined) => void }) {
+  const [amount, setAmount] = useState(allowance?.amount ?? 50);
+  const [period, setPeriod] = useState<PassportAllowance["period"]>(allowance?.period ?? "week");
+  const [covers, setCovers] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [passkey, setPasskey] = useState<"idle" | "asking" | "verifying">("idle");
+  const approve = () => {
+    setPasskey("verifying");
+    setTimeout(() => {
+      onChange({ amount, period, start: today, spent: allowance?.spent ?? {}, on: true });
+      setPasskey("idle"); setEditing(false);
+    }, 1300);
   };
-  const total = on.reduce((a, h) => a + h.capPerPurchase * times(h), 0) + onDemandLimit;
-  return { perTx: Math.ceil(perTx), total: Math.ceil(total) };
+  const on = allowance?.on && !editing;
+  return (
+    <Card title="Kite Agent Passport" right={<span className="flex gap-1.5">{on && <Chip tone="good">allowance on</Chip>}<Chip tone="muted">demo</Chip></span>}>
+      <p className="text-sm text-stone-600">With Kite Agent Passport, you set one spending allowance and approve it with your passkey. Kite then checks every payment your agents make against it and refuses anything over it. Reins&apos; own per-habit limits step aside: the allowance is the limit.</p>
+      <p className="mt-1 text-xs text-stone-500">This is a simulation so you can see how it works without real USDC. Payments still run on Kite testnet.</p>
+
+      {on && allowance ? (
+        <div className="mt-3 rounded-xl bg-emerald-100 p-3 text-sm text-emerald-800">
+          <p><span className="font-medium">{usd(allowance.amount)} {PERIOD_LABEL[allowance.period]}</span>, covering Reins and future agents. {usd(allowanceLeft(allowance, today))} left, resets {pretty(allowanceWindow(allowance, today).resets)}.</p>
+          <p className="mt-1 text-xs">
+            <button className="underline" onClick={() => { setAmount(allowance.amount); setPeriod(allowance.period); setEditing(true); }}>Change</button>
+            {" · "}<button className="underline" onClick={() => onChange({ ...allowance, on: false })}>Turn off</button>
+          </p>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="text-xs text-stone-600">Amount (USD, max 100)
+              <input type="number" min={1} max={100} className="mt-1 w-full rounded-lg border border-stone-300 px-2 py-1 text-sm text-stone-900" value={amount}
+                onChange={(e) => setAmount(Math.min(100, Math.max(1, Number(e.target.value) || 1)))} />
+            </label>
+            <label className="text-xs text-stone-600">Resets
+              <select className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-900" value={period} onChange={(e) => setPeriod(e.target.value as PassportAllowance["period"])}>
+                <option value="week">Weekly</option><option value="2weeks">Every 2 weeks</option><option value="month">Monthly</option>
+              </select>
+            </label>
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" className="accent-brand-500" checked={covers} onChange={(e) => setCovers(e.target.checked)} />Covers my current and future agents</label>
+          <div className="mt-3 flex gap-2">
+            <Button disabled={!covers || !today} onClick={() => setPasskey("asking")}>Approve allowance</Button>
+            {editing && <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>}
+          </div>
+          {!today && <p className="mt-1 text-xs text-stone-500">Load a statement first.</p>}
+        </div>
+      )}
+
+      {passkey !== "idle" && (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 px-4" onClick={() => passkey === "asking" && setPasskey("idle")}>
+          <div role="dialog" aria-modal="true" aria-label="Confirm with passkey" className="w-full max-w-sm rounded-2xl bg-white p-6 text-center" onClick={(e) => e.stopPropagation()}>
+            <svg viewBox="0 0 24 24" className="mx-auto h-12 w-12 text-brand-500" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 11c0 3-1 6-3 8M15 12c0 3-.6 5.5-2 7.5M9 14c-.3 1.8-1 3.3-2 4.5M6.5 9.5A6 6 0 0 1 18 12c0 1.5-.1 3-.5 4.5M5 13c.1-.6.2-1.2.4-1.7M12 7.5A3.5 3.5 0 0 1 15.5 11" />
+            </svg>
+            <h2 className="mt-3 text-lg font-semibold">Confirm with your passkey</h2>
+            <p className="mt-1 text-sm text-stone-500">Kite Agent Passport · allow agents to spend up to {usd(amount)} {PERIOD_LABEL[period]}.</p>
+            <p className="mt-1 text-[11px] text-stone-400">Demo: no real passkey or money is used.</p>
+            <div className="mt-5 flex justify-center gap-2">
+              {passkey === "asking" ? <>
+                <Button variant="secondary" onClick={() => setPasskey("idle")}>Cancel</Button>
+                <Button onClick={approve}>Use passkey</Button>
+              </> : <p className="flex items-center gap-2 text-sm text-stone-600"><span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />Verifying…</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
 }
 
-function PassportCard({ habits, onDemandLimit, session, onChange }: {
-  habits: Habit[]; onDemandLimit: number; session?: PassportSession; onChange: (p: PassportSession | undefined) => void;
-}) {
-  const [info, setInfo] = useState<{ available: boolean; signedIn?: boolean; email?: string | null; reason?: string } | null>(null);
-  const [ttl, setTtl] = useState("24h");
-  const sug = suggestedPassportLimits(habits, onDemandLimit, ttl);
-  const [perTx, setPerTx] = useState<number | null>(null);
-  const [total, setTotal] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  useEffect(() => { fetch("/api/passport").then((r) => r.json()).then(setInfo).catch(() => setInfo({ available: false, reason: "Couldn't check Passport." })); }, []);
-
-  // While waiting for approval, ask kpass every few seconds
-  const latest = useRef({ session, onChange });
-  useEffect(() => { latest.current = { session, onChange }; });
-  const pendingId = session?.state === "pending" ? session.requestId : undefined;
-  useEffect(() => {
-    if (!pendingId) return;
-    const id = setInterval(async () => {
-      try {
-        const r = await fetch(`/api/passport/session?requestId=${encodeURIComponent(pendingId)}`).then((x) => x.json());
-        const cur = latest.current.session;
-        if (cur && r.state && r.state !== "pending") latest.current.onChange({ ...cur, state: r.state, createdAt: r.state === "active" ? Date.now() : cur.createdAt });
-        else if (cur && r.hint && r.hint !== cur.hint) latest.current.onChange({ ...cur, hint: r.hint });
-      } catch { /* keep waiting */ }
-    }, 4000);
-    return () => clearInterval(id);
-  }, [pendingId]);
-
-  const create = async () => {
-    setBusy(true); setErr("");
-    try {
-      const body = { maxPerTx: perTx ?? sug.perTx, maxTotal: total ?? sug.total, ttl, summary: `Reins: pay my switched-on habits, up to $${perTx ?? sug.perTx} each` };
-      const r = await fetch("/api/passport/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json());
-      if (r.error) throw new Error(r.error);
-      onChange({ requestId: r.requestId, approvalUrl: r.approvalUrl, hint: r.hint ?? undefined, state: r.state, maxPerTx: r.maxPerTx, maxTotal: r.maxTotal, ttl: r.ttl, createdAt: Date.now(), spent: 0 });
-      if (r.approvalUrl) window.open(r.approvalUrl, "_blank", "noopener");
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    setBusy(false);
-  };
-
-  const live = passportLive(session);
-  const until = session ? new Date(session.createdAt + (TTL_HOURS[session.ttl] ?? 24) * 3600_000) : null;
+// Kite Agent Passport: Reins pays from the user's Passport wallet, and Kite enforces the
+// spending allowance the user set once in the Passport dashboard.
+function PassportCard({ live, payScale, onBalance }: { live: boolean; payScale?: number; onBalance: (usdc: number) => void }) {
+  const [info, setInfo] = useState<{ available: boolean; signedIn?: boolean; email?: string | null; balance?: number | null; reason?: string; dashboard?: string } | null>(null);
+  const cb = useRef(onBalance);
+  useEffect(() => { cb.current = onBalance; });
+  const refresh = useCallback(() => {
+    fetch("/api/passport").then((r) => r.json()).then((j) => { setInfo(j); if (typeof j.balance === "number") cb.current(j.balance); })
+      .catch(() => setInfo({ available: false, reason: "Couldn't check Passport." }));
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  const dash = info?.dashboard ?? "https://agentpassport.ai/overview";
   return (
-    <Card title="Kite Agent Passport" right={live ? <Chip tone="good">active</Chip> : session?.state === "pending" ? <Chip tone="warn">waiting for approval</Chip> : undefined}>
-      <p className="text-sm text-stone-600">Let Kite handle your spending limits. Set a per-payment limit and a total budget, approve the session once with your passkey, and Kite refuses anything above them. While it&apos;s active, Reins&apos; own habit limits step aside.</p>
-
-      {live && session && until && (
-        <div className="mt-3 rounded-xl bg-emerald-100 p-3 text-sm text-emerald-800">
-          Active until {until.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}: up to {usd(session.maxPerTx)} per payment, {usd(session.maxTotal - session.spent)} of {usd(session.maxTotal)} left.
-          <button className="ml-2 underline" onClick={() => onChange(undefined)}>Remove</button>
-        </div>
-      )}
-
-      {session?.state === "pending" && (
-        <div className="mt-3 rounded-xl bg-amber-100 p-3 text-sm text-amber-800">
-          Approve the session with your passkey to switch it on.{" "}
-          {session.approvalUrl && <a className="font-medium underline" href={session.approvalUrl} target="_blank" rel="noreferrer">Open the approval page</a>}
-          {session.hint && <span className="mt-1 block text-xs">Kite says: {session.hint}</span>}
-          <span className="block text-xs">Reins checks every few seconds and switches it on when you approve. <button className="underline" onClick={() => onChange(undefined)}>Cancel</button></span>
-        </div>
-      )}
-      {session?.state === "ended" && <p className="mt-3 text-sm text-stone-500">That session was declined or has expired. Create a new one below.</p>}
-
+    <Card title="Kite Agent Passport" right={live && info?.signedIn ? <Chip tone="good">paying</Chip> : undefined}>
+      <p className="text-sm text-stone-600">Reins pays from your Kite Agent Passport, and Kite holds the limit: the spending allowance you set once in your Passport dashboard. Anything over it, Kite refuses.</p>
       {!info ? <p className="mt-3 text-xs text-stone-500">Checking for Kite Passport…</p>
         : !info.available || !info.signedIn ? (
           <p className="mt-3 rounded-xl bg-stone-50 p-3 text-xs text-stone-600">{info.reason}</p>
-        ) : !live && session?.state !== "pending" && (
-          <div className="mt-3">
-            <p className="text-xs text-stone-500">Signed in to Kite Passport{info.email ? ` as ${info.email}` : ""}. Suggested from your switched-on habits:</p>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <label className="text-xs text-stone-600">Per payment (USDC)
-                <input type="number" min={1} className="mt-1 w-full rounded-lg border border-stone-300 px-2 py-1 text-sm text-stone-900" value={perTx ?? sug.perTx} onChange={(e) => setPerTx(Math.max(1, Number(e.target.value) || 1))} />
-              </label>
-              <label className="text-xs text-stone-600">Total budget (USDC)
-                <input type="number" min={1} className="mt-1 w-full rounded-lg border border-stone-300 px-2 py-1 text-sm text-stone-900" value={total ?? sug.total} onChange={(e) => setTotal(Math.max(1, Number(e.target.value) || 1))} />
-              </label>
-              <label className="text-xs text-stone-600">For
-                <select className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-900" value={ttl} onChange={(e) => { setTtl(e.target.value); setTotal(null); }}>
-                  <option value="24h">24 hours</option><option value="72h">3 days</option><option value="168h">7 days</option>
-                </select>
-              </label>
+        ) : (
+          <div className="mt-3 grid gap-2 text-sm">
+            <p>Signed in as <span className="font-medium">{info.email ?? "your Passport account"}</span>.</p>
+            <p>Passport balance: <span className="font-medium">{typeof info.balance === "number" ? `${info.balance} USDC` : "unknown"}</span>
+              {payScale && payScale !== 1 && typeof info.balance === "number" ? <span className="text-stone-500"> (a {usd(info.balance / payScale)} pot at the demo&apos;s 1/{Math.round(1 / payScale)} scale)</span> : null}
+              {" "}<button className="text-xs underline" onClick={refresh}>Refresh</button></p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <a className="rounded-xl bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600" href={dash} target="_blank" rel="noreferrer">Set allowance in Passport</a>
+              <a className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-medium hover:bg-stone-50" href={dash} target="_blank" rel="noreferrer">Add funds</a>
             </div>
-            <Button className="mt-3" disabled={busy || !habits.some((h) => h.enabled)} onClick={create}>{busy ? "Creating session…" : "Create Passport session"}</Button>
-            {!habits.some((h) => h.enabled) && <p className="mt-1 text-xs text-stone-500">Switch on at least one habit first.</p>}
-            <p className="mt-2 text-xs text-stone-500">Approving sets a real USDC budget on your Passport. In this demo, payments themselves still run on Kite testnet.</p>
+            <p className="text-xs text-stone-500">Payments are real USDC sent to the demo shops&apos; wallet. Your per-habit limits step aside, since Kite&apos;s allowance is the limit.</p>
           </div>
         )}
-      {err && <p className="mt-2 text-xs text-red-700">{err}</p>}
     </Card>
   );
 }
