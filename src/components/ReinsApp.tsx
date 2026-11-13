@@ -43,6 +43,9 @@ function allowanceWindow(a: PassportAllowance, today: string) {
 function allowanceLeft(a: PassportAllowance, today: string) {
   return Math.max(0, Math.round((a.amount - (a.spent[allowanceWindow(a, today).key] ?? 0)) * 100) / 100);
 }
+// With a Passport allowance set, the allowance is what Reins can spend; without one, the pot balance
+const spendable = (st: { passportDemo?: PassportAllowance; potBalance: number; today: string }) =>
+  st.passportDemo?.on ? allowanceLeft(st.passportDemo, st.today) : st.potBalance;
 function allowanceRefusal(a: PassportAllowance | undefined, today: string, amount: number): string | null {
   if (!a?.on) return null;
   const left = allowanceLeft(a, today);
@@ -153,8 +156,7 @@ export default function ReinsApp() {
   };
   const engineState = (st: AppState): EngineState => ({
     today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st), walletKnown: walletSource(st) !== "none",
-    passportLimits: status?.payments === "passport" || !!st.passportDemo?.on,
-    safetyFloor: st.safetyFloor, potBalance: st.potBalance, onDemandAutoLimit: st.onDemandAutoLimit, spent: st.spent, forceSafeMode: st.forceSafeMode,
+    safetyFloor: st.safetyFloor, potBalance: spendable(st), onDemandAutoLimit: st.onDemandAutoLimit, spent: st.spent, forceSafeMode: st.forceSafeMode,
   });
   const safe = s.today ? safeModeStatus(engineState(s)) : null;
 
@@ -211,7 +213,8 @@ export default function ReinsApp() {
     }
   }
 
-  async function processRequest(req: PurchaseRequest) {
+  // autoApprove: used by fast-forward, which assumes you approved everything that asked along the way
+  async function processRequest(req: PurchaseRequest, autoApprove = false) {
     let decision = await post<Decision>("/api/decide", { request: req, state: engineState(ref.current) });
     const refused = decision.action !== "block" ? allowanceRefusal(ref.current.passportDemo, req.date, req.amount) : null;
     if (refused) decision = { ...decision, action: "block", reason: refused, source: "rules" };
@@ -221,13 +224,14 @@ export default function ReinsApp() {
     };
     update((p) => ({ ...p, log: [entry, ...p.log] }));
     if (decision.action === "allow") await pay(entry);
+    else if (decision.action === "ask" && autoApprove) await approve(entry, true);
   }
 
   async function runDays(n: number) {
     for (let i = 0; i < n; i++) {
       const today = ref.current.today;
       for (const h of ref.current.habits.filter((x) => x.enabled && isDue(x, today))) {
-        await processRequest({ id: uid(), date: today, merchant: h.merchants[0], amount: h.avgAmount, habitId: h.id });
+        await processRequest({ id: uid(), date: today, merchant: h.merchants[0], amount: h.avgAmount, habitId: h.id }, true);
       }
       update((p) => ({ ...p, today: addDays(p.today, 1) }));
     }
@@ -238,10 +242,14 @@ export default function ReinsApp() {
     await processRequest({ id: uid(), date: ref.current.today, description: request, ...parsed });
   }
 
-  async function approve(entry: LogEntry) {
-    if (entry.request.amount > ref.current.potBalance) { setError("Not enough in your Kite Passport. Add funds first."); return; }
-    const refused = allowanceRefusal(ref.current.passportDemo, entry.request.date, entry.request.amount);
-    if (refused) { setError(refused); return; }
+  async function approve(entry: LogEntry, quiet = false) {
+    const refused = allowanceRefusal(ref.current.passportDemo, entry.request.date, entry.request.amount)
+      ?? (entry.request.amount > ref.current.potBalance ? "Not enough in your Kite Passport. Add funds first." : null);
+    if (refused) {
+      if (quiet) update((p) => ({ ...p, log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "blocked", decision: { ...l.decision, action: "block", reason: refused } } : l)) }));
+      else setError(refused);
+      return;
+    }
     update((p) => ({ ...p, log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "paying" } : l)) }));
     await pay(entry);
     if (entry.request.habitId) {
@@ -291,11 +299,11 @@ export default function ReinsApp() {
   const go = (p: Page) => { setPage(p); setNotifOpen(false); window.scrollTo(0, 0); };
   const done = s.log.filter((l) => !(l.outcome === "waiting" && l.decision.action === "ask"));
   const latest = s.log[0];
-  const approvable = waiting.filter((l) => l.request.amount <= s.potBalance);
+  const approvable = waiting.filter((l) => l.request.amount <= spendable(s));
   async function approveAll() {
     for (const l of approvable) {
       const current = ref.current.log.find((x) => x.id === l.id);
-      if (current && l.request.amount <= ref.current.potBalance) await approve(current);
+      if (current && l.request.amount <= spendable(ref.current)) await approve(current);
     }
   }
   async function connectWallet(address = addressDraft) {
@@ -519,40 +527,31 @@ export default function ReinsApp() {
                     <span className="text-sm font-medium">Kite Passport</span>
                     {status?.payments !== "passport" && <Chip tone="muted">demo</Chip>}
                   </div>
-                  {(() => {
-                    // One number: what Reins can spend now = the lower of the money in the Passport and the allowance left
-                    const allowance = status?.payments !== "passport" && s.passportDemo?.on ? allowanceLeft(s.passportDemo, s.today) : null;
-                    const canSpend = allowance === null ? s.potBalance : Math.min(s.potBalance, allowance);
-                    const limitedBy = allowance === null ? null : s.potBalance < allowance ? "balance" : "allowance";
-                    return (<>
-                      <Stat label="Reins can spend" value={usd(canSpend)} />
-                      {allowance !== null && s.passportDemo && (
-                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
-                          <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (canSpend / s.passportDemo.amount) * 100)}%` }} />
-                        </div>
+                  {status?.payments !== "passport" && s.passportDemo?.on ? (<>
+                    {/* The allowance is the money Reins can spend */}
+                    <Stat label="Reins can spend" value={usd(allowanceLeft(s.passportDemo, s.today))} />
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
+                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (allowanceLeft(s.passportDemo, s.today) / s.passportDemo.amount) * 100)}%` }} />
+                    </div>
+                    <p className="mt-1.5 text-xs text-stone-500">Of your {usd(s.passportDemo.amount)} allowance {PERIOD_LABEL[s.passportDemo.period]}. Refills {pretty(allowanceWindow(s.passportDemo, s.today).resets)}.</p>
+                  </>) : (<>
+                    <Stat label="Reins can spend" value={usd(s.potBalance)} />
+                    <p className="mt-1.5 text-xs text-stone-500">{status?.payments === "passport" ? "Your Passport balance. Kite enforces the allowance you set in the Passport dashboard." : "No allowance yet: set one in Settings, and it becomes what Reins can spend."}</p>
+                    <div className="mt-3">
+                      {status?.payments === "passport" ? (
+                        <a className="block rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds</a>
+                      ) : (
+                        <Button className="w-full" variant="secondary" onClick={() => (status?.payments === "kite" && status.agent ? setFundOpen(true) : topUp(40))}>Add funds</Button>
                       )}
-                      <p className="mt-1.5 text-xs text-stone-500">
-                        {status?.payments === "passport" ? <>Balance {usd(s.potBalance)} · allowance set in your Passport dashboard.</>
-                          : allowance !== null && s.passportDemo ? <>
-                            Balance {usd(s.potBalance)} · allowance {usd(allowance)} of {usd(s.passportDemo.amount)} left, resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}.
-                            {limitedBy === "balance" && <span className="text-brand-700"> Add funds to use your full allowance.</span>}
-                          </> : <>Balance {usd(s.potBalance)}. No allowance yet: set one in Settings so Kite holds every payment to it.</>}
-                      </p>
-                    </>);
-                  })()}
-                  <div className="mt-3">
-                    {status?.payments === "passport" ? (
-                      <a className="block rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds</a>
-                    ) : (
-                      <Button className="w-full" variant="secondary" onClick={() => (status?.payments === "kite" && status.agent ? setFundOpen(true) : topUp(40))}>Add funds</Button>
-                    )}
-                  </div>
+                    </div>
+                  </>)}
                   {status?.payments === "kite" && status.agent && (
                     <p className="mt-2 text-xs text-stone-500">
                       Pays on Kite testnet from{" "}
                       <a className="underline" href={`https://testnet.kitescan.ai/address/${status.agent}`} target="_blank" rel="noreferrer">{shortAddr(status.agent)}</a>
                       {agentWallet ? ` (${agentWallet.balance.toFixed(2)} ${agentWallet.symbol})` : ""}.
                       {status.payScale && status.payScale !== 1 ? ` Test payments are 1/${Math.round(1 / status.payScale)} of the price.` : ""}
+                      {s.passportDemo?.on && <> <button className="underline" onClick={() => setFundOpen(true)}>Top up</button></>}
                     </p>
                   )}
                 </div>
@@ -576,8 +575,8 @@ export default function ReinsApp() {
                     </div>
                     {h.enabled && (
                       <div className="flex items-center gap-2 text-xs">
-                        {h.autopilot ? <Chip tone="good">autopilot</Chip> : s.mode === "trust_ladder" && <Chip tone="muted">{h.approvalsInARow}/{TRUST_LADDER_STEPS}</Chip>}
-                        {status?.payments === "passport" || s.passportDemo?.on ? <span className="text-xs text-stone-500">limit set by Kite Passport</span> : (<>
+                        {h.autopilot ? <Chip tone="good">autopilot</Chip> : s.mode === "trust_ladder" && <Chip tone="muted">{Math.min(h.approvalsInARow, TRUST_LADDER_STEPS)}/{TRUST_LADDER_STEPS}</Chip>}
+                        {(<>
                         <span className="text-stone-500">limit $</span>
                         <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right" value={h.capPerPurchase}
                           onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} />
@@ -696,7 +695,7 @@ export default function ReinsApp() {
                 {s.habits.filter((h) => h.enabled).map((h) => (
                   <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
                     <span>{h.name}</span>
-                    {status?.payments === "passport" || s.passportDemo?.on ? <span className="text-xs text-stone-500">set by Kite Passport</span> : <span className="flex items-center gap-2 text-xs text-stone-500">
+                    {<span className="flex items-center gap-2 text-xs text-stone-500">
                       limit $
                       <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right text-stone-900" value={h.capPerPurchase}
                         onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} aria-label={`${h.name} limit`} />
@@ -900,7 +899,7 @@ function PassportDemoCard({ allowance, today, onChange }: { allowance?: Passport
   const on = allowance?.on && !editing;
   return (
     <Card title="Kite Agent Passport" right={<span className="flex gap-1.5">{on && <Chip tone="good">allowance on</Chip>}<Chip tone="muted">demo</Chip></span>}>
-      <p className="text-sm text-stone-600">With Kite Agent Passport, you set one spending allowance and approve it with your passkey. Kite then checks every payment your agents make against it and refuses anything over it. Reins&apos; own per-habit limits step aside: the allowance is the limit.</p>
+      <p className="text-sm text-stone-600">With Kite Agent Passport, you set one spending allowance and approve it with your passkey. That allowance is what Reins can spend: every payment comes out of it, and Kite refuses anything over what&apos;s left. Your per-habit limits still apply inside it.</p>
       <p className="mt-1 text-xs text-stone-500">This is a simulation so you can see how it works without real USDC. Payments still run on Kite testnet.</p>
 
       {on && allowance ? (
@@ -983,7 +982,7 @@ function PassportCard({ live, payScale, onBalance }: { live: boolean; payScale?:
               <a className="rounded-xl bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600" href={dash} target="_blank" rel="noreferrer">Set allowance in Passport</a>
               <a className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-medium hover:bg-stone-50" href={dash} target="_blank" rel="noreferrer">Add funds</a>
             </div>
-            <p className="text-xs text-stone-500">Payments are real USDC sent to the demo shops&apos; wallet. Your per-habit limits step aside, since Kite&apos;s allowance is the limit.</p>
+            <p className="text-xs text-stone-500">Payments are real USDC sent to the demo shops&apos; wallet. Your per-habit limits still apply inside Kite&apos;s allowance.</p>
           </div>
         )}
     </Card>
