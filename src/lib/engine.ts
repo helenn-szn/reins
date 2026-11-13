@@ -61,7 +61,7 @@ export function ruleDecision(req: PurchaseRequest, s: EngineState): Decision {
 
   // 1. Hard limits (Kite would refuse these anyway)
   if (req.amount <= 0) return d("block", "Invalid amount.");
-  if (req.amount > s.potBalance) return d("ask", `Your spending pot has $${s.potBalance.toFixed(2)}, not enough for $${req.amount.toFixed(2)}. Top it up from your wallet to continue.`);
+  if (req.amount > s.potBalance) return d("ask", `Your Kite Passport has $${s.potBalance.toFixed(2)}, not enough for $${req.amount.toFixed(2)}. Add funds to continue.`);
   if (habit) {
     if (!habit.enabled) return d("block", `${habit.name} is switched off.`);
   }

@@ -232,7 +232,7 @@ export default function ReinsApp() {
   }
 
   async function approve(entry: LogEntry) {
-    if (entry.request.amount > ref.current.potBalance) { setError("Not enough in your spending pot. Top it up first."); return; }
+    if (entry.request.amount > ref.current.potBalance) { setError("Not enough in your Kite Passport. Add funds first."); return; }
     const refused = allowanceRefusal(ref.current.passportDemo, entry.request.date, entry.request.amount);
     if (refused) { setError(refused); return; }
     update((p) => ({ ...p, log: p.log.map((l) => (l.id === entry.id ? { ...l, outcome: "paying" } : l)) }));
@@ -497,39 +497,56 @@ export default function ReinsApp() {
 
               {/* Wallet frame */}
               <Card title="Wallet">
-                <Stat label="Wallet balance" value={usd(walletBalance(s))} />
-                <Stat label="Spending pot" value={usd(s.potBalance)} />
+                {/* Your own wallet: Reins only watches it, for Safe Mode */}
+                <Stat label="Your wallet" value={usd(walletBalance(s))} />
+                <p className="text-xs text-stone-500">{s.walletRead && !s.useDemoBalance ? `Reading ${shortAddr(s.walletAddress)} on Kite testnet, read-only.` : "Demo balance."} Reins never spends from it.</p>
                 {safe && (
-                  <p className={`mt-3 text-xs ${safe.active ? "text-safe-700" : "text-stone-500"}`}>
+                  <p className={`mt-2 text-xs ${safe.active ? "text-safe-700" : "text-stone-500"}`}>
                     {safe.auto ? "Below" : "Safe Mode switches on below"} {usd(safe.needed)}: bills due in 2 weeks ({usd(safe.upcoming.total)}) plus your {usd(s.safetyFloor)} floor.
                   </p>
                 )}
-                {s.passportDemo?.on && status?.payments !== "passport" && (
-                  <p className="mt-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-stone-700">
-                    <span className="font-medium">Kite Passport allowance (demo)</span>: {usd(allowanceLeft(s.passportDemo, s.today))} of {usd(s.passportDemo.amount)} left, resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}.
-                  </p>
-                )}
-                {status?.payments === "passport" ? (
-                  <>
-                    <p className="mt-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-stone-700">
-                      <span className="font-medium">Paid by Kite Agent Passport.</span> Kite enforces your spending allowance on every payment.
+
+                {/* Kite Passport: the money Reins spends, and the allowance Kite holds it to */}
+                <div className="mt-4 rounded-xl border border-stone-200 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Kite Passport</span>
+                    {status?.payments !== "passport" && <Chip tone="muted">demo</Chip>}
+                  </div>
+                  <Stat label="Balance" value={usd(s.potBalance)} />
+                  {status?.payments === "passport" ? (
+                    <p className="mt-1 text-xs text-stone-500">Allowance: set in your Passport dashboard. Kite refuses anything over it.</p>
+                  ) : s.passportDemo?.on ? (
+                    <div className="mt-2">
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="text-stone-500">Allowance left</span>
+                        <span className="font-medium">{usd(allowanceLeft(s.passportDemo, s.today))} <span className="font-normal text-stone-500">of {usd(s.passportDemo.amount)}</span></span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
+                        <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (allowanceLeft(s.passportDemo, s.today) / s.passportDemo.amount) * 100)}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs text-stone-500">Resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}. Kite refuses anything over it.</p>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-stone-500">No allowance yet. Set one so Kite holds every payment to it.</p>
+                  )}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {status?.payments === "passport" ? (<>
+                      <a className="rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds</a>
+                      <a className="rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Set allowance</a>
+                    </>) : (<>
+                      <Button variant="secondary" onClick={() => (status?.payments === "kite" && status.agent ? setFundOpen(true) : topUp(40))}>Add funds</Button>
+                      <Button variant="secondary" onClick={() => go("settings")}>{s.passportDemo?.on ? "Change allowance" : "Set allowance"}</Button>
+                    </>)}
+                  </div>
+                  {status?.payments === "kite" && status.agent && (
+                    <p className="mt-2 text-xs text-stone-500">
+                      Pays on Kite testnet from{" "}
+                      <a className="underline" href={`https://testnet.kitescan.ai/address/${status.agent}`} target="_blank" rel="noreferrer">{shortAddr(status.agent)}</a>
+                      {agentWallet ? ` (${agentWallet.balance.toFixed(2)} ${agentWallet.symbol})` : ""}.
+                      {status.payScale && status.payScale !== 1 ? ` Test payments are 1/${Math.round(1 / status.payScale)} of the price.` : ""}
                     </p>
-                    <a className="mt-4 block w-full rounded-xl border border-stone-300 px-4 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds or change allowance in Passport</a>
-                  </>
-                ) : status?.payments === "kite" && status.agent ? (
-                  <Button className="mt-4 w-full" variant="secondary" onClick={() => setFundOpen(true)}>Add money to spending pot</Button>
-                ) : (
-                  <Button className="mt-4 w-full" variant="secondary" onClick={() => topUp(40)}>Move $40 to spending pot</Button>
-                )}
-                <p className="mt-2 text-xs text-stone-500">{s.walletRead && !s.useDemoBalance ? `Reading ${shortAddr(s.walletAddress)} on Kite testnet.` : "Using the demo balance."}</p>
-                {status?.payments === "kite" && status.agent && (
-                  <p className="mt-1 text-xs text-stone-500">
-                    Payments are live on Kite testnet from the Reins agent wallet{" "}
-                    <a className="underline" href={`https://testnet.kitescan.ai/address/${status.agent}`} target="_blank" rel="noreferrer">{shortAddr(status.agent)}</a>
-                    {agentWallet ? ` (${agentWallet.balance.toFixed(2)} ${agentWallet.symbol} left)` : ""}.
-                    {status.payScale && status.payScale !== 1 ? ` Test payments are 1/${Math.round(1 / status.payScale)} of the price.` : ""}
-                  </p>
-                )}
+                  )}
+                </div>
               </Card>
             </div>
 
@@ -584,7 +601,7 @@ export default function ReinsApp() {
                     <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{l.request.merchant} · {usd(l.request.amount)} <span className="font-normal text-stone-500">· {pretty(l.date)}</span></p>
-                        <p className="text-xs text-stone-500">{l.request.amount > s.potBalance ? "Top up the spending pot first." : l.decision.reason}</p>
+                        <p className="text-xs text-stone-500">{l.request.amount > s.potBalance ? "Add funds to your Kite Passport first." : l.decision.reason}</p>
                       </div>
                       <div className="flex gap-2">
                         <Button onClick={() => run("Paying…", () => approve(l))} disabled={!!busy || l.request.amount > s.potBalance}>Approve</Button>
@@ -1003,8 +1020,8 @@ function AddMoneyDialog({ address, payScale, onClose, onReceived }: { address: s
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/40 px-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Add money" className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold">Add money to your spending pot</h2>
-        <p className="mt-1 text-sm text-stone-500">Send {symbol} from any wallet to your pot&apos;s address. Reins only spends what you put here, and never pulls from your own wallet.</p>
+        <h2 className="text-lg font-semibold">Add funds to your Kite Passport</h2>
+        <p className="mt-1 text-sm text-stone-500">Send {symbol} from any wallet to this address. Reins only spends what you put here, and never pulls from your own wallet.</p>
 
         <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Network">
           {NETWORKS.map((n) => (
