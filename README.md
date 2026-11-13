@@ -44,6 +44,18 @@ flowchart LR
 
 Four demo shops (Reins Coffee, Rides, Eats and Store) live at `/api/shops/[shop]`. The **Shops** page shows the orders each one received and the money in the shops' wallet. On testnet each payment is 1/100 of the price (`KITE_PAY_SCALE`), so a little faucet money covers a whole demo.
 
+## Kite Agent Passport
+
+Reins can hand its limits to **Kite Agent Passport**. In Settings, it turns your switched-on habits into a Passport spending session (a per-payment cap, a total budget and a time window) through Kite's `kpass` app. You approve it once with your passkey, and from then on Kite refuses any Passport payment above those limits. Reins also holds every payment it makes to the same session, so a $15 lunch is refused when the session allows $5 per payment.
+
+Passport is production-only and signs in with your own email and passkey, so this works when Reins runs on your computer, not on the hosted demo:
+
+1. Install `kpass` and sign up, following [Kite's Passport guide](https://docs.gokite.ai/passport/install).
+2. In `.env.local`, set `PASSPORT_MODE=on` (and `KPASS_BIN` if `kpass` isn't on your PATH).
+3. Run `npm run dev`, switch on some habits, then go to **Settings → Kite Agent Passport → Create Passport session** and approve it.
+
+Approving sets a real USDC budget on your Passport. In this demo, payments themselves still run on Kite testnet from the Reins agent wallet; paying through the Passport session itself is the next step.
+
 ## Run it locally
 
 ```bash
@@ -81,7 +93,7 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS v4 and viem.
 
 ## Honest limits and what's next
 
-- **One shared demo pot.** Everyone trying the demo spends from the same agent wallet. Next: each user gets their own pot through **Kite Agent Passport**, which signs payments within limits Kite enforces.
+- **One shared demo pot.** Everyone trying the demo spends from the same agent wallet. Reins can already create a Kite Agent Passport session with your limits (see above); next, payments go through that session, so Kite signs and enforces every one.
 - **Funding.** Today you deposit test USDT on Kite. Next: automatic top-ups within a weekly cap, deposits from other chains (Passport already offers deposit addresses on Base, Solana, Polygon, Avalanche and more), and card or bank top-ups for people who don't hold crypto.
 - **Real merchants.** Uber, airlines and food apps don't accept agent payments yet, so the demo uses x402 shops. Reins works with any merchant that accepts x402.
 - **Your data stays in your browser.** There are no accounts yet, so Reins only runs while the page is open. Next: sign-in, so it can pay on schedule with the browser closed.
