@@ -46,7 +46,7 @@ Four demo shops (Reins Coffee, Rides, Eats and Store) live at `/api/shops/[shop]
 
 ## Kite Agent Passport
 
-Reins can hand its limits to **Kite Agent Passport**. In Settings, it turns your switched-on habits into a Passport spending session (a per-payment cap, a total budget and a time window) through Kite's `kpass` app. You approve it once with your passkey, and from then on Kite refuses any Passport payment above those limits. Reins also holds every payment it makes to the same session, so a $15 lunch is refused when the session allows $5 per payment.
+Reins can hand its spending limits to **Kite Agent Passport**. In Settings, you set a per-payment limit, a total budget and a time window, and Reins creates a Passport spending session with them through Kite's `kpass` app. You approve it once with your passkey. From then on, Kite holds the limits: anything above them is refused, and Reins' own per-habit limits step aside while the session is active.
 
 Passport is production-only and signs in with your own email and passkey, so this works when Reins runs on your computer, not on the hosted demo:
 

@@ -14,8 +14,8 @@ export async function POST(req: Request) {
   // Plain words only: on Windows kpass runs through the shell, so nothing that could be read as a command
   const summary = String(b.summary || "Reins: pay my switched-on habits within these limits").replace(/[^\w\s.,:$/()-]/g, "").slice(0, 160) || "Reins spending session";
   try {
-    const j = await kpass(["agent:session", "create", "--task-summary", summary, "--max-amount-per-tx", String(perTx),
-      "--max-total-amount", String(total), "--ttl", ttl, "--assets", "USDC", "--payment-approach", "x402_http"], 45_000);
+    const j = await kpass(["session", "create", "--task-summary", summary, "--max-amount-per-tx", String(perTx),
+      "--max-total-amount", String(total), "--ttl", ttl, "--assets", "USDC"], 45_000);
     const requestId = pick.requestId(j), approvalUrl = pick.approvalUrl(j);
     if (!requestId && !approvalUrl) return Response.json({ error: "kpass replied without an approval link.", raw: j }, { status: 502 });
     return Response.json({ requestId, approvalUrl, hint: pick.hint(j) ?? null, state: sessionState(pick.status(j)), maxPerTx: perTx, maxTotal: total, ttl, raw: j });
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("requestId");
   if (!id || !/^[\w-]{4,128}$/.test(id)) return Response.json({ error: "Missing session request id." }, { status: 400 });
   try {
-    const j = await kpass(["agent:session", "status", "--request-id", id], 20_000);
+    const j = await kpass(["session", "status", "--request-id", id], 20_000);
     const status = pick.status(j);
     return Response.json({ state: sessionState(status), status: status ?? null, hint: pick.hint(j) ?? null, expiresAt: pick.expiresAt(j) ?? null, raw: j });
   } catch (e) {

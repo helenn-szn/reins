@@ -91,4 +91,5 @@ export type EngineState = {
   onDemandAutoLimit: number; // on-demand purchases up to this can skip approval in full autopilot
   spent: Record<string, number>; // "<habitId>:<periodKey>" -> USD already spent in that period
   forceSafeMode?: boolean; // the user switched Safe Mode on by hand
+  passportLimits?: boolean; // a Kite Passport session is active: Kite holds the spending limits, not Reins
 };

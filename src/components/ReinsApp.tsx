@@ -38,8 +38,8 @@ const passportLive = (p?: PassportSession) => !!p && p.state === "active" && Dat
 // Kite's limits always win: Reins refuses anything the Passport session wouldn't allow
 function passportBlock(p: PassportSession | undefined, amount: number): string | null {
   if (!passportLive(p)) return null;
-  if (amount > p!.maxPerTx) return `Over your Kite Passport limit of ${usd(p!.maxPerTx)} per payment.`;
-  if (p!.spent + amount > p!.maxTotal) return `Your Kite Passport session has ${usd(Math.max(0, p!.maxTotal - p!.spent))} left of its ${usd(p!.maxTotal)} budget.`;
+  if (amount > p!.maxPerTx) return `Kite Passport refused it: over your ${usd(p!.maxPerTx)} per-payment limit.`;
+  if (p!.spent + amount > p!.maxTotal) return `Kite Passport refused it: only ${usd(Math.max(0, p!.maxTotal - p!.spent))} left of your ${usd(p!.maxTotal)} budget.`;
   return null;
 }
 
@@ -141,6 +141,7 @@ export default function ReinsApp() {
   const walletBalance = (st: AppState) => (st.useDemoBalance || !st.walletRead ? st.demoBalance : Math.round((st.walletRead.balance / liveScale) * 100) / 100);
   const engineState = (st: AppState): EngineState => ({
     today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st),
+    passportLimits: passportLive(st.passport),
     safetyFloor: st.safetyFloor, potBalance: st.potBalance, onDemandAutoLimit: st.onDemandAutoLimit, spent: st.spent, forceSafeMode: st.forceSafeMode,
   });
   const safe = s.today ? safeModeStatus(engineState(s)) : null;
@@ -497,7 +498,7 @@ export default function ReinsApp() {
                 )}
                 {passportLive(s.passport) && (
                   <p className="mt-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-stone-700">
-                    <span className="font-medium">Kite Passport session</span>: {usd(s.passport!.maxPerTx)} per payment, {usd(s.passport!.maxTotal - s.passport!.spent)} of {usd(s.passport!.maxTotal)} left. Reins won&apos;t pay past it.
+                    <span className="font-medium">Limits by Kite Passport</span>: {usd(s.passport!.maxPerTx)} per payment, {usd(s.passport!.maxTotal - s.passport!.spent)} of {usd(s.passport!.maxTotal)} left.
                   </p>
                 )}
                 {status?.payments === "kite" && status.agent ? (
@@ -535,10 +536,11 @@ export default function ReinsApp() {
                     {h.enabled && (
                       <div className="flex items-center gap-2 text-xs">
                         {h.autopilot ? <Chip tone="good">autopilot</Chip> : s.mode === "trust_ladder" && <Chip tone="muted">{h.approvalsInARow}/{TRUST_LADDER_STEPS}</Chip>}
+                        {passportLive(s.passport) ? <span className="text-xs text-stone-500">limit set by Kite Passport</span> : (<>
                         <span className="text-stone-500">limit $</span>
                         <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right" value={h.capPerPurchase}
                           onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} />
-                        <span className="hidden text-stone-400 sm:inline">({describeLimit(h)})</span>
+                        <span className="hidden text-stone-400 sm:inline">({describeLimit(h)})</span></>)}
                       </div>
                     )}
                   </li>
@@ -648,12 +650,12 @@ export default function ReinsApp() {
                 {s.habits.filter((h) => h.enabled).map((h) => (
                   <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
                     <span>{h.name}</span>
-                    <span className="flex items-center gap-2 text-xs text-stone-500">
+                    {passportLive(s.passport) ? <span className="text-xs text-stone-500">set by Kite Passport</span> : <span className="flex items-center gap-2 text-xs text-stone-500">
                       limit $
                       <input type="number" min={0} className="w-16 rounded-lg border border-stone-300 px-2 py-1 text-right text-stone-900" value={h.capPerPurchase}
                         onChange={(e) => setHabit(h.id, { capPerPurchase: Math.max(0, Number(e.target.value) || 0) })} aria-label={`${h.name} limit`} />
                       <span className="hidden sm:inline">({describeLimit(h)})</span>
-                    </span>
+                    </span>}
                   </li>
                 ))}
                 {!s.habits.some((h) => h.enabled) && <li className="py-2 text-sm text-stone-500">Switch on a habit on the dashboard to set its limit.</li>}
@@ -896,7 +898,7 @@ function PassportCard({ habits, onDemandLimit, session, onChange }: {
   const until = session ? new Date(session.createdAt + (TTL_HOURS[session.ttl] ?? 24) * 3600_000) : null;
   return (
     <Card title="Kite Agent Passport" right={live ? <Chip tone="good">active</Chip> : session?.state === "pending" ? <Chip tone="warn">waiting for approval</Chip> : undefined}>
-      <p className="text-sm text-stone-600">Hand Reins&apos; limits to Kite. Reins turns them into a Passport spending session and you approve it once with your passkey. Kite then refuses any Passport payment above those limits, and Reins holds every payment to the same limits.</p>
+      <p className="text-sm text-stone-600">Let Kite handle your spending limits. Set a per-payment limit and a total budget, approve the session once with your passkey, and Kite refuses anything above them. While it&apos;s active, Reins&apos; own habit limits step aside.</p>
 
       {live && session && until && (
         <div className="mt-3 rounded-xl bg-emerald-100 p-3 text-sm text-emerald-800">

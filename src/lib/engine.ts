@@ -64,6 +64,9 @@ export function ruleDecision(req: PurchaseRequest, s: EngineState): Decision {
   if (req.amount > s.potBalance) return d("ask", `Your spending pot has $${s.potBalance.toFixed(2)}, not enough for $${req.amount.toFixed(2)}. Top it up from your wallet to continue.`);
   if (habit) {
     if (!habit.enabled) return d("block", `${habit.name} is switched off.`);
+  }
+  // With a Kite Passport session, Kite holds the spending limits; Reins' own per-habit limits step aside
+  if (habit && !s.passportLimits) {
     if (req.amount > habit.capPerPurchase) return d("block", `$${req.amount.toFixed(2)} is over the $${habit.capPerPurchase} limit for ${habit.name}.`);
     const spent = s.spent[`${habit.id}:${periodKey(habit, req.date)}`] ?? 0;
     if (spent + req.amount > periodCap(habit)) return d("block", `${habit.name} already used its limit for this period.`);
