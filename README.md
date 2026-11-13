@@ -16,7 +16,7 @@ Built for the OpenServ SERV Hackathon, Edition 02 (Kite track).
 4. **Safe Mode.** If your wallet can't cover the next 2 weeks of bills plus your safety floor, Reins pauses lifestyle spending and asks before everything else. You can also switch it on yourself.
 5. **Ask for anything.** "Get me a ride home" or "Order lunch under $15" goes through the same checks.
 6. **Pays on Kite.** Approved purchases are paid over x402 to demo shops on Kite's test network, and every payment links to KiteScan.
-7. **You fund it, it never pulls.** Reins spends only from its spending pot. To add money you send to the pot's deposit address (copy it or scan the QR) from any wallet, and Reins confirms when it arrives on-chain.
+7. **You fund it, it never pulls.** Reins never spends from your own wallet; it only reads it for Safe Mode, and shows $0.00 until you connect one. Reins spends from its Kite Passport. To add money you send to the Passport's deposit address (copy it or scan the QR) from any wallet, and Reins confirms when it arrives on-chain.
 
 ## How a purchase is decided
 
@@ -46,11 +46,15 @@ Four demo shops (Reins Coffee, Rides, Eats and Store) live at `/api/shops/[shop]
 
 ## Kite Agent Passport
 
-With Kite Agent Passport, you set one spending allowance (up to $100 a week, every 2 weeks or a month), approve it with your passkey, and Kite checks every payment your agents make against it. In Reins, the allowance is the limit: per-habit limits step aside, and anything over what's left is refused ("Kite Passport refused it: $15.00 is more than the $1.74 left of your $10.00 allowance per week").
+With Kite Agent Passport, you set one spending allowance (up to $100 a week, every 2 weeks or a month), approve it with your passkey, and Kite checks every payment your agents make against it. In Reins, the allowance is what Reins can spend: every payment comes out of it, and anything over what's left is refused ("Kite Passport refused it: $4.13 is more than the $1.35 left of your $30.00 allowance per week"). Your per-habit limits still apply inside it, so Coffee can't go over $5 a day even with $30 left this week.
 
-**Demo (works everywhere):** Settings → Kite Agent Passport → set an amount and period → Approve allowance → Use passkey. This simulates the Passport allowance, so you can see how it works without real USDC; payments still run on Kite testnet. The dashboard shows what's left and when it resets.
+**Demo (works everywhere):** Settings → Kite Agent Passport → set an amount and period → Approve allowance → Use passkey. This simulates the Passport allowance, so you can see how it works without real USDC; payments still run on Kite testnet. The dashboard's Kite Passport box shows what Reins can spend, with a bar, and when it refills.
 
 **Real Passport (your own computer):** with Kite's `kpass` app installed and signed in, set `PAYMENTS_MODE=passport` in `.env.local` and run `npm run dev`. Reins then pays from your Passport wallet with `kpass wallet send`, and Kite enforces the allowance you set in the [Passport dashboard](https://agentpassport.ai/overview). This moves real USDC (at the demo's 1/100 scale, about 4 cents per coffee).
+
+## Demo controls
+
+Settings → Demo controls moves the simulated date forward. **Fast-forward 1 day** or **1 week** runs every switched-on habit that falls due, and assumes you approved anything that asked along the way, so approvals still count towards each habit's trust ladder. Anything over a habit limit, the Passport allowance or blocked by Safe Mode is still refused. **Use demo balance** gives your own wallet a demo balance with a slider, to show Safe Mode switching on.
 
 ## Run it locally
 
