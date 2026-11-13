@@ -49,6 +49,18 @@ flowchart LR
 
 Four demo shops (Reins Coffee, Rides, Eats and Store) live at `/api/shops/[shop]`. The **Shops** page shows the orders each one received and the money in the shops' wallet. On testnet each payment is 1/100 of the price (`KITE_PAY_SCALE`), so a little faucet money covers a whole demo.
 
+### See it on-chain
+
+Real payments Reins made on Kite testnet while we tested it (amounts are 1/100 of the price, so a $4.13 coffee moved 0.0413 USDT):
+
+| Payment | What happened | KiteScan |
+| --- | --- | --- |
+| First test coffee | Reins Coffee asked for payment over x402, Reins paid 0.0001 USDT and the shop confirmed the order | [0x3960dd…1852](https://testnet.kitescan.ai/tx/0x3960ddb27b6f89ee911ae484330c5fb9f49077c355da0aca97cd8bfe47f21852) |
+| Usual coffee, rules only | End-to-end test: statement → habits → "Buy my usual coffee" → paid 0.0413 USDT | [0xff8250…79fd](https://testnet.kitescan.ai/tx/0xff825061fd32f8745bcf766d2331ecd9a6a013e0e5bd421563d8117118f979fd) |
+| Usual coffee, checked by SERV | Same flow with SERV Reasoning live: SERV judged it "matches your usual coffee purchase", then Reins paid 0.0413 USDT | [0x69cb9e…2261](https://testnet.kitescan.ai/tx/0x69cb9e353c181b2492bb44c9377d005f5220569dbb57b8009b089974ac002261) |
+
+The wallets behind them: the Reins agent wallet that pays, [0x852D…BB20](https://testnet.kitescan.ai/address/0x852D041fB43A4b707458e47a26d4Fc181fDbBB20), and the demo shops' wallet that gets paid, [0x9B75…c97d](https://testnet.kitescan.ai/address/0x9B759784ca63D8b1013a55358E4D1dea9f8ec97d). Every payment made from the live demo shows up under them.
+
 ## Kite Agent Passport
 
 With Kite Agent Passport, you set one spending allowance (up to $100 a week, every 2 weeks or a month), approve it with your passkey, and Kite checks every payment your agents make against it. In Reins, the allowance is what Reins can spend: every payment comes out of it, and anything over what's left is refused ("Kite Passport refused it: $4.13 is more than the $1.35 left of your $30.00 allowance per week"). Your per-habit limits still apply inside it, so Coffee can't go over $5 a day even with $30 left this week.
@@ -102,3 +114,7 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS v4 and viem.
 - **Funding.** Today you deposit test USDT on Kite. Next: automatic top-ups within a weekly cap, deposits from other chains (Passport already offers deposit addresses on Base, Solana, Polygon, Avalanche and more), and card or bank top-ups for people who don't hold crypto.
 - **Real merchants.** Uber, airlines and food apps don't accept agent payments yet, so the demo uses x402 shops. Reins works with any merchant that accepts x402.
 - **Your data stays in your browser.** There are no accounts yet, so Reins only runs while the page is open. Next: sign-in, so it can pay on schedule with the browser closed.
+
+## License
+
+[MIT](LICENSE). Free to use, copy and build on, with the copyright notice kept.
