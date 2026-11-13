@@ -59,7 +59,7 @@ Real payments Reins made on Kite testnet while we tested it (amounts are 1/100 o
 | Usual coffee, rules only | End-to-end test: statement → habits → "Buy my usual coffee" → paid 0.0413 USDT | [0xff8250…79fd](https://testnet.kitescan.ai/tx/0xff825061fd32f8745bcf766d2331ecd9a6a013e0e5bd421563d8117118f979fd) |
 | Usual coffee, checked by SERV | Same flow with SERV Reasoning live: SERV judged it "matches your usual coffee purchase", then Reins paid 0.0413 USDT | [0x69cb9e…2261](https://testnet.kitescan.ai/tx/0x69cb9e353c181b2492bb44c9377d005f5220569dbb57b8009b089974ac002261) |
 
-The wallets behind them: the Reins agent wallet that pays, [0x852D…BB20](https://testnet.kitescan.ai/address/0x852D041fB43A4b707458e47a26d4Fc181fDbBB20), and the demo shops' wallet that gets paid, [0x9B75…c97d](https://testnet.kitescan.ai/address/0x9B759784ca63D8b1013a55358E4D1dea9f8ec97d). Every payment made from the live demo shows up under them.
+The wallets behind them: the project's own Reins wallet that pays (each visitor now gets a separate wallet of their own), [0x852D…BB20](https://testnet.kitescan.ai/address/0x852D041fB43A4b707458e47a26d4Fc181fDbBB20), and the demo shops' wallet that gets paid, [0x9B75…c97d](https://testnet.kitescan.ai/address/0x9B759784ca63D8b1013a55358E4D1dea9f8ec97d). Every payment made from the live demo shows up under them.
 
 ## Kite Agent Passport
 
@@ -110,7 +110,7 @@ Built with Next.js 16, React 19, TypeScript, Tailwind CSS v4 and viem.
 
 ## Honest limits and what's next
 
-- **One shared demo pot.** Everyone trying the demo spends from the same agent wallet. Reins can already pay through a real Kite Agent Passport on your own computer, and the hosted demo simulates the Passport allowance (see above). Next: Passport payments on the hosted app, so every user's allowance is enforced by Kite.
+- **Test wallets.** Every visitor gets their own Reins wallet on Kite testnet, with a one-click "Get free test money" starter (0.3 USDT plus a little KITE for fees). The keys are kept on the server, so these are demo wallets, not wallets you control. Next: each user's own Kite Agent Passport, so the money and the allowance are fully theirs, enforced by Kite.
 - **Funding.** Today you deposit test USDT on Kite. Next: automatic top-ups within a weekly cap, deposits from other chains (Passport already offers deposit addresses on Base, Solana, Polygon, Avalanche and more), and card or bank top-ups for people who don't hold crypto.
 - **Real merchants.** Uber, airlines and food apps don't accept agent payments yet, so the demo uses x402 shops. Reins works with any merchant that accepts x402.
 - **Your data stays in your browser.** There are no accounts yet, so Reins only runs while the page is open. Next: sign-in, so it can pay on schedule with the browser closed.
