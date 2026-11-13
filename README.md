@@ -8,6 +8,11 @@ Reins is an AI agent that learns your spending habits, pays for the ones you swi
 
 Built for the OpenServ SERV Hackathon, Edition 02 (Kite track).
 
+## Demo videos
+
+- [**Reins demo**](demo/reins-demo.mp4) (2:13): learning habits from a statement, the habit switchboard, asking SERV, approving, x402 payments on Kite with KiteScan receipts, Safe Mode and autopilot.
+- [**Kite Agent Passport update**](demo/reins-kite-passport-update.mp4) (2:05): funding by deposit address, setting a Passport allowance with a passkey, per-habit limits inside it, fast-forwarding a week, and connecting a wallet read-only.
+
 ## What it does
 
 1. **Learns your habits.** Upload a bank statement (CSV) or connect a wallet read-only. Reins finds your recurring spending: what, how much, which day and the usual time ("Coffee: about $4.13 most weekdays at 8:10 am").
