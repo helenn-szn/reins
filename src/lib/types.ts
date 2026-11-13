@@ -86,6 +86,7 @@ export type EngineState = {
   mode: Mode;
   habits: Habit[];
   walletBalance: number; // user's own wallet, read-only (USD)
+  walletKnown?: boolean; // false until a wallet is connected (or the demo balance is chosen): no automatic Safe Mode on an unknown balance
   safetyFloor: number; // USD the user always wants left
   potBalance: number; // Kite Passport spending pot (USD)
   onDemandAutoLimit: number; // on-demand purchases up to this can skip approval in full autopilot

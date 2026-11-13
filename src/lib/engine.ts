@@ -48,7 +48,7 @@ export function upcomingObligations(s: Pick<EngineState, "habits" | "today">) {
 export function safeModeStatus(s: EngineState) {
   const upcoming = upcomingObligations(s);
   const needed = round2(upcoming.total + s.safetyFloor);
-  const auto = s.walletBalance < needed;
+  const auto = s.walletKnown !== false && s.walletBalance < needed;
   return { active: auto || Boolean(s.forceSafeMode), auto, manual: Boolean(s.forceSafeMode) && !auto, needed, upcoming };
 }
 

@@ -18,6 +18,7 @@ type AppState = {
   walletAddress: string;
   walletRead?: WalletRead;
   useDemoBalance: boolean;
+  demoOptIn?: boolean; // the demo balance only counts once chosen in Settings
   demoBalance: number;
   safetyFloor: number;
   potBalance: number;
@@ -143,9 +144,15 @@ export default function ReinsApp() {
 
   // A connected wallet's tokens use the same testnet scale as payments (1 USDT = $100 at 1/100)
   const liveScale = status?.payments === "kite" ? status.payScale || 1 : 1;
-  const walletBalance = (st: AppState) => (st.useDemoBalance || !st.walletRead ? st.demoBalance : Math.round((st.walletRead.balance / liveScale) * 100) / 100);
+  // Your own wallet: a connected wallet, the demo balance if chosen in Settings, or nothing yet ($0, no automatic Safe Mode)
+  const walletSource = (st: AppState): "connected" | "demo" | "none" =>
+    st.walletRead && !st.useDemoBalance ? "connected" : st.useDemoBalance && st.demoOptIn ? "demo" : "none";
+  const walletBalance = (st: AppState) => {
+    const src = walletSource(st);
+    return src === "connected" ? Math.round((st.walletRead!.balance / liveScale) * 100) / 100 : src === "demo" ? st.demoBalance : 0;
+  };
   const engineState = (st: AppState): EngineState => ({
-    today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st),
+    today: st.today, mode: st.mode, habits: st.habits, walletBalance: walletBalance(st), walletKnown: walletSource(st) !== "none",
     passportLimits: status?.payments === "passport" || !!st.passportDemo?.on,
     safetyFloor: st.safetyFloor, potBalance: st.potBalance, onDemandAutoLimit: st.onDemandAutoLimit, spent: st.spent, forceSafeMode: st.forceSafeMode,
   });
@@ -265,8 +272,9 @@ export default function ReinsApp() {
   }
   function topUp(amount: number) {
     update((p) => {
-      const move = p.useDemoBalance ? Math.min(amount, p.demoBalance) : amount; // can't move more than the wallet holds
-      return { ...p, potBalance: p.potBalance + move, demoBalance: p.useDemoBalance ? p.demoBalance - move : p.demoBalance };
+      const demo = walletSource(p) === "demo";
+      const move = demo ? Math.min(amount, p.demoBalance) : amount; // can't move more than the demo wallet holds
+      return { ...p, potBalance: p.potBalance + move, demoBalance: demo ? p.demoBalance - move : p.demoBalance };
     });
   }
 
@@ -499,12 +507,11 @@ export default function ReinsApp() {
               <Card title="Wallet">
                 {/* Your own wallet: Reins only watches it, for Safe Mode */}
                 <Stat label="Your wallet" value={usd(walletBalance(s))} />
-                <p className="text-xs text-stone-500">{s.walletRead && !s.useDemoBalance ? `Reading ${shortAddr(s.walletAddress)} on Kite testnet, read-only.` : "Demo balance."} Reins never spends from it.</p>
-                {safe && (
-                  <p className={`mt-2 text-xs ${safe.active ? "text-safe-700" : "text-stone-500"}`}>
-                    {safe.auto ? "Below" : "Safe Mode switches on below"} {usd(safe.needed)}: bills due in 2 weeks ({usd(safe.upcoming.total)}) plus your {usd(s.safetyFloor)} floor.
-                  </p>
-                )}
+                <p className="text-xs text-stone-500">
+                  {walletSource(s) === "connected" ? <>Reading {shortAddr(s.walletAddress)} on Kite testnet, read-only. Reins never spends from it.</>
+                    : walletSource(s) === "demo" ? "Demo balance. Reins never spends from it."
+                    : <><button className="underline" onClick={() => setWalletOpen(true)}>Connect a wallet</button> to see your balance. Reins only reads it.</>}
+                </p>
 
                 {/* Kite Passport: the money Reins spends, and the allowance Kite holds it to */}
                 <div className="mt-4 rounded-xl border border-stone-200 p-3">
@@ -529,18 +536,16 @@ export default function ReinsApp() {
                           : allowance !== null && s.passportDemo ? <>
                             Balance {usd(s.potBalance)} · allowance {usd(allowance)} of {usd(s.passportDemo.amount)} left, resets {pretty(allowanceWindow(s.passportDemo, s.today).resets)}.
                             {limitedBy === "balance" && <span className="text-brand-700"> Add funds to use your full allowance.</span>}
-                          </> : <>Balance {usd(s.potBalance)}. No allowance yet: set one so Kite holds every payment to it.</>}
+                          </> : <>Balance {usd(s.potBalance)}. No allowance yet: set one in Settings so Kite holds every payment to it.</>}
                       </p>
                     </>);
                   })()}
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {status?.payments === "passport" ? (<>
-                      <a className="rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds</a>
-                      <a className="rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Set allowance</a>
-                    </>) : (<>
-                      <Button variant="secondary" onClick={() => (status?.payments === "kite" && status.agent ? setFundOpen(true) : topUp(40))}>Add funds</Button>
-                      <Button variant="secondary" onClick={() => go("settings")}>{s.passportDemo?.on ? "Change allowance" : "Set allowance"}</Button>
-                    </>)}
+                  <div className="mt-3">
+                    {status?.payments === "passport" ? (
+                      <a className="block rounded-xl border border-stone-300 px-3 py-2 text-center text-sm font-medium hover:bg-stone-50" href="https://agentpassport.ai/overview" target="_blank" rel="noreferrer">Add funds</a>
+                    ) : (
+                      <Button className="w-full" variant="secondary" onClick={() => (status?.payments === "kite" && status.agent ? setFundOpen(true) : topUp(40))}>Add funds</Button>
+                    )}
                   </div>
                   {status?.payments === "kite" && status.agent && (
                     <p className="mt-2 text-xs text-stone-500">
@@ -717,10 +722,10 @@ export default function ReinsApp() {
                 <Button variant="secondary" disabled={!!busy} onClick={() => run("Running the week…", () => runDays(7))}>Fast-forward 1 week</Button>
               </div>
               <label className="mt-4 flex items-center gap-2 text-sm">
-                <input type="checkbox" className="accent-brand-500" checked={s.useDemoBalance} onChange={(e) => update((p) => ({ ...p, useDemoBalance: e.target.checked }))} />
+                <input type="checkbox" className="accent-brand-500" checked={walletSource(s) === "demo"} onChange={(e) => update((p) => ({ ...p, useDemoBalance: e.target.checked, demoOptIn: e.target.checked }))} />
                 Use demo balance
               </label>
-              {s.useDemoBalance && (
+              {walletSource(s) === "demo" && (
                 <label className="mt-2 block text-sm text-stone-600">
                   Demo wallet balance: {usd(s.demoBalance)}
                   <input type="range" min={0} max={300} step={5} value={s.demoBalance} className="mt-1 w-full accent-brand-500"
