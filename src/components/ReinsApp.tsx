@@ -30,7 +30,7 @@ type AppState = {
 
 // A Kite Agent Passport spending session created from Reins' limits (see src/lib/passport.ts)
 type PassportSession = {
-  requestId?: string; approvalUrl?: string; state: "pending" | "active" | "ended";
+  requestId?: string; approvalUrl?: string; hint?: string; state: "pending" | "active" | "ended";
   maxPerTx: number; maxTotal: number; ttl: string; createdAt: number; spent: number;
 };
 const TTL_HOURS: Record<string, number> = { "24h": 24, "72h": 72, "168h": 168 };
@@ -874,6 +874,7 @@ function PassportCard({ habits, onDemandLimit, session, onChange }: {
         const r = await fetch(`/api/passport/session?requestId=${encodeURIComponent(pendingId)}`).then((x) => x.json());
         const cur = latest.current.session;
         if (cur && r.state && r.state !== "pending") latest.current.onChange({ ...cur, state: r.state, createdAt: r.state === "active" ? Date.now() : cur.createdAt });
+        else if (cur && r.hint && r.hint !== cur.hint) latest.current.onChange({ ...cur, hint: r.hint });
       } catch { /* keep waiting */ }
     }, 4000);
     return () => clearInterval(id);
@@ -885,7 +886,7 @@ function PassportCard({ habits, onDemandLimit, session, onChange }: {
       const body = { maxPerTx: perTx ?? sug.perTx, maxTotal: total ?? sug.total, ttl, summary: `Reins: pay my switched-on habits, up to $${perTx ?? sug.perTx} each` };
       const r = await fetch("/api/passport/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json());
       if (r.error) throw new Error(r.error);
-      onChange({ requestId: r.requestId, approvalUrl: r.approvalUrl, state: r.state, maxPerTx: r.maxPerTx, maxTotal: r.maxTotal, ttl: r.ttl, createdAt: Date.now(), spent: 0 });
+      onChange({ requestId: r.requestId, approvalUrl: r.approvalUrl, hint: r.hint ?? undefined, state: r.state, maxPerTx: r.maxPerTx, maxTotal: r.maxTotal, ttl: r.ttl, createdAt: Date.now(), spent: 0 });
       if (r.approvalUrl) window.open(r.approvalUrl, "_blank", "noopener");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     setBusy(false);
@@ -908,6 +909,7 @@ function PassportCard({ habits, onDemandLimit, session, onChange }: {
         <div className="mt-3 rounded-xl bg-amber-100 p-3 text-sm text-amber-800">
           Approve the session with your passkey to switch it on.{" "}
           {session.approvalUrl && <a className="font-medium underline" href={session.approvalUrl} target="_blank" rel="noreferrer">Open the approval page</a>}
+          {session.hint && <span className="mt-1 block text-xs">Kite says: {session.hint}</span>}
           <span className="block text-xs">Reins checks every few seconds and switches it on when you approve. <button className="underline" onClick={() => onChange(undefined)}>Cancel</button></span>
         </div>
       )}

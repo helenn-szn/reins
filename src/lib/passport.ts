@@ -25,6 +25,10 @@ export function kpass(args: string[], timeoutMs = 30_000): Promise<Json> {
           }
           return reject(new Error(msg.split("\n").slice(-3).join(" ") || "kpass failed"));
         }
+        // kpass wraps every reply in { status, hint, next_command, ... }; "error" means the command failed
+        if (parsed && typeof parsed.status === "string" && /^(error|fail)/i.test(parsed.status)) {
+          return reject(new Error(String(parsed.hint || parsed.message || parsed.error || "kpass reported an error")));
+        }
         resolve(parsed ?? { raw: text });
       });
   });
@@ -42,7 +46,18 @@ export const pick = {
   approvalUrl: (j: Json) => (find(j, (k, v) => /approv|link|url/i.test(k) && isUrl(v)) ?? find(j, (_k, v) => isUrl(v))) as string | undefined,
   requestId: (j: Json) => find(j, (k, v) => /request_?id/i.test(k) && typeof v === "string") as string | undefined
     ?? (find(j, (k, v) => /^(id|session_?id)$/i.test(k) && typeof v === "string") as string | undefined),
-  status: (j: Json) => (find(j, (k, v) => /^(status|state|approval_?status)$/i.test(k) && typeof v === "string") as string | undefined)?.toLowerCase(),
+  // The top-level "status" is kpass's own envelope ("success" = the command ran), not the session's state.
+  // Look for the session's state in its own fields, or in a nested object.
+  status: (j: Json) => {
+    const own = find(j, (k, v) => /^(session_?status|approval_?status|session_?state|state)$/i.test(k) && typeof v === "string") as string | undefined;
+    if (own) return own.toLowerCase();
+    for (const [k, v] of Object.entries(j)) if (k !== "status" && v && typeof v === "object") {
+      const inner = find(v, (kk, vv) => /^status$/i.test(kk) && typeof vv === "string") as string | undefined;
+      if (inner) return inner.toLowerCase();
+    }
+    return undefined;
+  },
+  hint: (j: Json) => (typeof j.hint === "string" ? j.hint : undefined),
   email: (j: Json) => find(j, (k, v) => /email/i.test(k) && typeof v === "string") as string | undefined,
   expiresAt: (j: Json) => find(j, (k, v) => /expir/i.test(k) && (typeof v === "string" || typeof v === "number")) as string | number | undefined,
 };
@@ -50,7 +65,7 @@ export const pick = {
 // Map kpass's wording onto three states the app understands
 export function sessionState(status?: string): "pending" | "active" | "ended" {
   if (!status) return "pending";
-  if (/approv|activ|grant|ready|success|complete/.test(status)) return "active";
-  if (/reject|deni|declin|expir|cancel|revok|fail/.test(status)) return "ended";
+  if (/reject|deni|declin|disapprov|expir|cancel|revok|fail/.test(status)) return "ended";
+  if (/^(approved|active|granted|authori[sz]ed)$|approved|activ/.test(status)) return "active";
   return "pending";
 }

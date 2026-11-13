@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       "--max-total-amount", String(total), "--ttl", ttl, "--assets", "USDC", "--payment-approach", "x402_http"], 45_000);
     const requestId = pick.requestId(j), approvalUrl = pick.approvalUrl(j);
     if (!requestId && !approvalUrl) return Response.json({ error: "kpass replied without an approval link.", raw: j }, { status: 502 });
-    return Response.json({ requestId, approvalUrl, state: sessionState(pick.status(j)), maxPerTx: perTx, maxTotal: total, ttl, raw: j });
+    return Response.json({ requestId, approvalUrl, hint: pick.hint(j) ?? null, state: sessionState(pick.status(j)), maxPerTx: perTx, maxTotal: total, ttl, raw: j });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   try {
     const j = await kpass(["agent:session", "status", "--request-id", id], 20_000);
     const status = pick.status(j);
-    return Response.json({ state: sessionState(status), status: status ?? null, expiresAt: pick.expiresAt(j) ?? null, raw: j });
+    return Response.json({ state: sessionState(status), status: status ?? null, hint: pick.hint(j) ?? null, expiresAt: pick.expiresAt(j) ?? null, raw: j });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }
